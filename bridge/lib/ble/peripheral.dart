@@ -65,7 +65,7 @@ class IC8Peripheral {
 
   IC8Peripheral(this.manager);
 
-  Future<void> start({String name = 'IC Bike (power corrected)'}) async {
+  Future<void> start({String name = 'IC Bike (corrected)'}) async {
     if (_running) return;
 
     _indoorBikeDataChar = GATTCharacteristic.mutable(
