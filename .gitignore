@@ -1,0 +1,26 @@
+# Personal data — outdoor GPS traces, raw BLE logs, calibration runs.
+# Keep calibration CSVs out of the public repo; the analysis scripts will
+# rebuild them from local logs.
+data/
+
+# Flutter / Dart (top-level; bridge/.gitignore covers most of this too)
+**/.dart_tool/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor / IDE
+.idea/
+*.iml
+*.swp
+
+# macOS
+.DS_Store
+
+# Local Claude memory
+.claude/
