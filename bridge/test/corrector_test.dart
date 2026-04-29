@@ -54,11 +54,40 @@ void main() {
       expect(c.lastValid, isFalse);
     });
 
-    test('returns null at FTMS cadence cap when no CSC backup is present', () {
+    test('clamps to cap when FTMS is at cap and no CSC backup is present', () {
       final c = Corrector();
-      final p = c.push(timestampS: 0, resistance: 30, cadenceRpm: Constants.cadCap,
-                       csCadenceAvailable: false, cadenceRpmFtms: Constants.cadCap);
-      expect(p, isNull);
+      // Sample with FTMS reading at cap (true cadence unknown). Without CSC
+      // we treat actual cad as exactly the cap rather than dropping the row.
+      double? p;
+      for (int i = 0; i < 5; i++) {
+        p = c.push(timestampS: i.toDouble(), resistance: 30,
+                   cadenceRpm: Constants.cadCap,
+                   csCadenceAvailable: false,
+                   cadenceRpmFtms: Constants.cadCap);
+      }
+      const omega = Constants.cadCap * math.pi / 30.0;
+      final expected =
+          (Constants.aBrake * 30 + Constants.bFriction) * Constants.iCrank * omega * omega;
+      expect(p, isNotNull);
+      expect(p!, closeTo(expected, 0.5));
+    });
+
+    test('higher FTMS at cap (no CSC) still produces only cap-equivalent power', () {
+      final c = Corrector();
+      // Caller passes whatever value FTMS reported above cap (e.g. 130),
+      // physics still uses cap value so the result matches the cap-equivalent.
+      double? p;
+      for (int i = 0; i < 5; i++) {
+        p = c.push(timestampS: i.toDouble(), resistance: 30,
+                   cadenceRpm: 130.0,
+                   csCadenceAvailable: false,
+                   cadenceRpmFtms: 130.0);
+      }
+      const omega = Constants.cadCap * math.pi / 30.0;
+      final expected =
+          (Constants.aBrake * 30 + Constants.bFriction) * Constants.iCrank * omega * omega;
+      expect(p, isNotNull);
+      expect(p!, closeTo(expected, 0.5));
     });
 
     test('accepts cadence above FTMS cap when CSC is available', () {

@@ -9,6 +9,17 @@ const int _kFtmsService = 0x1826;
 const int _kIndoorBikeData = 0x2AD2;
 const int _kFtmsFeature = 0x2ACC;
 const int _kFtmsStatus = 0x2ADA;
+const int _kFtmsControlPoint = 0x2AD9;
+
+// FTMS Control Point opcodes (the bike is mechanical-only, so we only
+// acknowledge the housekeeping ones; everything else is honestly NotSupported).
+const int _kCpOpRequestControl = 0x00;
+const int _kCpOpReset = 0x01;
+const int _kCpOpStartResume = 0x07;
+const int _kCpOpStopPause = 0x08;
+const int _kCpOpResponse = 0x80;
+const int _kCpResultSuccess = 0x01;
+const int _kCpResultNotSupported = 0x02;
 
 const int _kCyclingPowerService = 0x1818;
 const int _kCyclingPowerMeasurement = 0x2A63;
@@ -45,6 +56,7 @@ class IC8Peripheral {
   late GATTCharacteristic _indoorBikeDataChar;
   late GATTCharacteristic _ftmsFeatureChar;
   late GATTCharacteristic _ftmsStatusChar;
+  late GATTCharacteristic _ftmsControlPointChar;
   late GATTCharacteristic _cyclingPowerMeasChar;
   late GATTCharacteristic _cyclingPowerFeatureChar;
   late GATTCharacteristic _sensorLocationChar;
@@ -59,8 +71,10 @@ class IC8Peripheral {
   final Set<Central> _subscribedFtms = {};
   final Set<Central> _subscribedCps = {};
   final Set<Central> _subscribedFtmsStatus = {};
+  final Set<Central> _subscribedFtmsCp = {};
 
   StreamSubscription? _readReqSub;
+  StreamSubscription? _writeReqSub;
   StreamSubscription? _notifyStateSub;
 
   IC8Peripheral(this.manager);
@@ -86,6 +100,15 @@ class IC8Peripheral {
       permissions: const [],
       descriptors: const [],
     );
+    _ftmsControlPointChar = GATTCharacteristic.mutable(
+      uuid: UUID.short(_kFtmsControlPoint),
+      properties: const [
+        GATTCharacteristicProperty.write,
+        GATTCharacteristicProperty.indicate,
+      ],
+      permissions: const [GATTCharacteristicPermission.write],
+      descriptors: const [],
+    );
     final ftmsService = GATTService(
       uuid: UUID.short(_kFtmsService),
       isPrimary: true,
@@ -94,6 +117,7 @@ class IC8Peripheral {
         _ftmsFeatureChar,
         _indoorBikeDataChar,
         _ftmsStatusChar,
+        _ftmsControlPointChar,
       ],
     );
 
@@ -166,8 +190,12 @@ class IC8Peripheral {
         } else {
           _subscribedFtmsStatus.remove(ev.central);
         }
+      } else if (ev.characteristic.uuid == _ftmsControlPointChar.uuid) {
+        ev.state ? _subscribedFtmsCp.add(ev.central) : _subscribedFtmsCp.remove(ev.central);
       }
     });
+
+    _writeReqSub = manager.characteristicWriteRequested.listen(_onWriteRequest);
 
     await manager.startAdvertising(Advertisement(
       name: name,
@@ -192,6 +220,8 @@ class IC8Peripheral {
     _pacer = null;
     await _readReqSub?.cancel();
     _readReqSub = null;
+    await _writeReqSub?.cancel();
+    _writeReqSub = null;
     await _notifyStateSub?.cancel();
     _notifyStateSub = null;
     if (_running) await manager.stopAdvertising();
@@ -200,6 +230,42 @@ class IC8Peripheral {
     _subscribedFtms.clear();
     _subscribedCps.clear();
     _subscribedFtmsStatus.clear();
+    _subscribedFtmsCp.clear();
+  }
+
+  /// FTMS Control Point: this is a mechanical-resistance bike, so we ack the
+  /// session-housekeeping opcodes (Request Control / Reset / Start / Stop) so
+  /// apps stop nagging, and honestly NotSupport everything else (Set Target
+  /// Power, Set Sim Params, etc.) so they fall back to power-only mode rather
+  /// than driving an ERG loop into a brake we can't actually move.
+  Future<void> _onWriteRequest(GATTCharacteristicWriteRequestedEventArgs ev) async {
+    if (ev.characteristic.uuid != _ftmsControlPointChar.uuid) {
+      await manager.respondWriteRequest(ev.request);
+      return;
+    }
+    await manager.respondWriteRequest(ev.request);
+
+    final value = ev.request.value;
+    if (value.isEmpty) return;
+    final opcode = value[0];
+    final int result;
+    switch (opcode) {
+      case _kCpOpRequestControl:
+      case _kCpOpReset:
+      case _kCpOpStartResume:
+      case _kCpOpStopPause:
+        result = _kCpResultSuccess;
+        break;
+      default:
+        result = _kCpResultNotSupported;
+    }
+    final response = Uint8List.fromList([_kCpOpResponse, opcode, result]);
+    for (final c in _subscribedFtmsCp) {
+      try {
+        await manager.notifyCharacteristic(
+            c, _ftmsControlPointChar, value: response);
+      } catch (_) {/* central may have dropped subscription */}
+    }
   }
 
   /// Update the most recent values and notify subscribers immediately.

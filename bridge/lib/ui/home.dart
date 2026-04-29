@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../ble/central.dart';
 import '../ble/peripheral.dart';
@@ -24,6 +25,7 @@ class _HomePageState extends State<HomePage> {
 
   StreamSubscription? _scanSub;
   StreamSubscription? _sampleSub;
+  StreamSubscription? _connStateSub;
 
   @override
   void initState() {
@@ -38,6 +40,24 @@ class _HomePageState extends State<HomePage> {
       final speed = s.ftms.speedKmh ?? 0;
       _peripheral.update(speedKmh: speed, cadenceRpm: cad, powerW: pwr);
       if (mounted) setState(() {});
+    });
+
+    _connStateSub = _central.connState.listen((cs) {
+      if (!mounted) return;
+      setState(() {
+        switch (cs) {
+          case BridgeConnState.idle:
+            _status = 'idle';
+          case BridgeConnState.connecting:
+            _status = 'connecting…';
+          case BridgeConnState.connected:
+            _status = 'bridging';
+          case BridgeConnState.reconnecting:
+            _status = 'bike dropped — reconnecting…';
+          case BridgeConnState.disconnected:
+            _status = 'disconnected';
+        }
+      });
     });
   }
 
@@ -69,14 +89,18 @@ class _HomePageState extends State<HomePage> {
     await _scanSub?.cancel();
     _scanSub = null;
     await _central.stopScan();
-    setState(() { _status = 'connecting…'; _scanning = false; });
+    setState(() => _scanning = false);
     try {
+      // Keep the device awake while we're bridging — Rouvy/MyWhoosh runs on a
+      // separate device, so this phone's job is to stay foregrounded with BLE
+      // alive end-to-end of the ride. iOS bluetooth-central/peripheral
+      // background modes (Info.plist) cover the case where the screen sleeps.
+      await WakelockPlus.enable();
       await _central.connect(p);
       _connected = p;
-      setState(() => _status = 'connected; starting peripheral…');
       await _peripheral.start();
-      setState(() => _status = 'bridging');
     } catch (e) {
+      await WakelockPlus.disable();
       setState(() => _status = 'error: $e');
     }
   }
@@ -85,13 +109,16 @@ class _HomePageState extends State<HomePage> {
     await _peripheral.stop();
     await _central.disconnect();
     _connected = null;
-    setState(() => _status = 'disconnected');
+    await WakelockPlus.disable();
   }
 
   @override
   void dispose() {
     _scanSub?.cancel();
     _sampleSub?.cancel();
+    _connStateSub?.cancel();
+    WakelockPlus.disable();
+    _central.dispose();
     super.dispose();
   }
 

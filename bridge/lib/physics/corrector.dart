@@ -20,7 +20,9 @@ class Corrector {
   bool lastValid = false;
 
   /// Append one sample. Returns the corrected power in W (or null if the input
-  /// was masked out: cadence cap without CSC backup, R==100, or cad<=0).
+  /// is unusable: R==100 or cad<=0). When FTMS cadence is at its cap with no
+  /// CSC fallback, true cadence is unknown — we clamp to the cap value, which
+  /// underestimates real power above the cap rather than dropping the sample.
   double? push({
     required double timestampS,
     required int resistance,
@@ -33,6 +35,11 @@ class Corrector {
     final bool rcap = resistance >= Constants.rCap;
     final bool capWithoutCsc =
         cadenceRpmFtms >= Constants.cadCap && !csCadenceAvailable;
+    // When FTMS is capped and CSC isn't available, treat actual cadence as
+    // exactly the cap. Underestimates at true >cap RPM, but a plausible number
+    // is more useful for the rider than a dropped sample.
+    final double cadForPhysics =
+        capWithoutCsc ? Constants.cadCap : cadenceRpm;
 
     // Slide R buffer for median filter
     _rBuf.addLast(resistance);
@@ -42,7 +49,7 @@ class Corrector {
     final List<int> rSorted = _rBuf.toList()..sort();
     final double rSmooth = rSorted[rSorted.length ~/ 2].toDouble();
 
-    final double omega = cadenceRpm * math.pi / 30.0;
+    final double omega = cadForPhysics * math.pi / 30.0;
 
     // Slide omega buffer for central diff
     _omegaBuf.addLast((t: timestampS, omega: omega));
@@ -60,7 +67,7 @@ class Corrector {
     lastROmega = omega;
     lastROmegaDot = omegaDot;
 
-    if (inactive || rcap || capWithoutCsc) {
+    if (inactive || rcap) {
       lastValid = false;
       lastSteadyW = 0;
       lastKeW = 0;

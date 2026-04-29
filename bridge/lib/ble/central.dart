@@ -30,18 +30,41 @@ class IC8Sample {
   });
 }
 
+/// Connection state surfaced to the UI. The link can drop spontaneously
+/// (BLE radio glitches, the bike sleeping during a long stop, the phone
+/// briefly walking out of range) — when that happens we keep `desired` set
+/// and try to reattach. The states differ from raw GATT state because we
+/// also need to expose "we know we're disconnected and we're waiting to
+/// retry" as a distinct condition from "the user asked us to stop."
+enum BridgeConnState {
+  idle,
+  connecting,
+  connected,
+  reconnecting,
+  disconnected, // user-initiated
+}
+
 /// Discover, connect, and stream IC8 samples.
 class IC8Central {
   final CentralManager manager;
   final Corrector corrector = Corrector();
 
-  IC8Central(this.manager);
+  IC8Central(this.manager) {
+    _connStateSub = manager.connectionStateChanged.listen(_onConnState);
+  }
 
   final StreamController<IC8Sample> _samples =
       StreamController<IC8Sample>.broadcast();
   Stream<IC8Sample> get samples => _samples.stream;
 
+  final StreamController<BridgeConnState> _connStateCtrl =
+      StreamController<BridgeConnState>.broadcast();
+  Stream<BridgeConnState> get connState => _connStateCtrl.stream;
+  BridgeConnState _state = BridgeConnState.idle;
+  BridgeConnState get state => _state;
+
   Peripheral? _peripheral;
+  Peripheral? _desired; // intended bike — kept across drops for auto-reconnect
   GATTCharacteristic? _ftmsChar;
   GATTCharacteristic? _cscChar;
 
@@ -51,6 +74,13 @@ class IC8Central {
   double? _t0;
 
   StreamSubscription? _notifySub;
+  StreamSubscription? _connStateSub;
+  Timer? _reconnectTimer;
+  int _reconnectAttempt = 0;
+  // Backoff for a flaky bike: the first try is fast (radio glitches recover
+  // in seconds) but we cap at 30s so we don't hammer the BLE stack across a
+  // long absence (e.g. bike powered off mid-ride).
+  static const _reconnectBackoffSeconds = [1, 2, 4, 8, 15, 30];
 
   /// Stream discovered peripherals advertising the FTMS service. UI uses this.
   Stream<({Peripheral peripheral, String name, int rssi})> scanForBikes() async* {
@@ -72,11 +102,23 @@ class IC8Central {
 
   Future<void> stopScan() async => manager.stopDiscovery();
 
+  /// Connect to [p] and remember it as the desired bike — if BLE drops, the
+  /// central will reattach automatically until [disconnect] is called.
   Future<void> connect(Peripheral p) async {
+    _desired = p;
+    _reconnectAttempt = 0;
+    _reconnectTimer?.cancel();
+    await _attach(p);
+  }
+
+  Future<void> _attach(Peripheral p) async {
+    _setState(BridgeConnState.connecting);
     _peripheral = p;
     await manager.connect(p);
     final services = await manager.discoverGATT(p);
 
+    _ftmsChar = null;
+    _cscChar = null;
     for (final s in services) {
       final sUuid = s.uuid.toString().toLowerCase();
       for (final c in s.characteristics) {
@@ -95,17 +137,74 @@ class IC8Central {
       throw StateError('IC8 missing FTMS Indoor Bike Data characteristic');
     }
 
+    await _notifySub?.cancel();
     _notifySub = manager.characteristicNotified.listen(_onNotify);
     await manager.setCharacteristicNotifyState(p, _ftmsChar!, state: true);
     if (_cscChar != null) {
       await manager.setCharacteristicNotifyState(p, _cscChar!, state: true);
     }
+    _reconnectAttempt = 0;
+    _setState(BridgeConnState.connected);
   }
 
   Future<void> disconnect() async {
+    _desired = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     await _notifySub?.cancel();
-    if (_peripheral != null) await manager.disconnect(_peripheral!);
+    _notifySub = null;
+    if (_peripheral != null) {
+      try {
+        await manager.disconnect(_peripheral!);
+      } catch (_) {/* already disconnected */}
+    }
     _peripheral = null;
+    _setState(BridgeConnState.disconnected);
+  }
+
+  void _onConnState(PeripheralConnectionStateChangedEventArgs ev) {
+    final desired = _desired;
+    if (desired == null) return;
+    if (ev.peripheral.uuid != desired.uuid) return;
+    if (ev.state == ConnectionState.disconnected
+        && _state != BridgeConnState.connecting) {
+      // Unexpected drop — bike fell asleep, BLE radio glitched, app paused
+      // long enough for the OS to tear down the link, etc. Re-establish.
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    final desired = _desired;
+    if (desired == null) return;
+    _reconnectTimer?.cancel();
+    final attempt = _reconnectAttempt;
+    final secs = attempt < _reconnectBackoffSeconds.length
+        ? _reconnectBackoffSeconds[attempt]
+        : _reconnectBackoffSeconds.last;
+    _reconnectAttempt++;
+    _setState(BridgeConnState.reconnecting);
+    _reconnectTimer = Timer(Duration(seconds: secs), () async {
+      if (_desired == null) return;
+      try {
+        await _attach(_desired!);
+      } catch (_) {
+        if (_desired != null) _scheduleReconnect();
+      }
+    });
+  }
+
+  void _setState(BridgeConnState s) {
+    _state = s;
+    _connStateCtrl.add(s);
+  }
+
+  Future<void> dispose() async {
+    _reconnectTimer?.cancel();
+    await _connStateSub?.cancel();
+    await _notifySub?.cancel();
+    await _connStateCtrl.close();
+    await _samples.close();
   }
 
   void _onNotify(GATTCharacteristicNotifiedEventArgs ev) {
