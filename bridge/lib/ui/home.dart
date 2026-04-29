@@ -20,6 +20,7 @@ class _HomePageState extends State<HomePage> {
   Peripheral? _connected;
   IC8Sample? _last;
   String _status = 'idle';
+  bool _scanning = false;
 
   StreamSubscription? _scanSub;
   StreamSubscription? _sampleSub;
@@ -48,7 +49,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _startScan() async {
-    setState(() { _found.clear(); _status = 'scanning'; });
+    setState(() { _found.clear(); _status = 'scanning'; _scanning = true; });
     _scanSub?.cancel();
     _scanSub = _central.scanForBikes().listen((d) {
       if (!_found.any((e) => e.peripheral.uuid == d.peripheral.uuid)) {
@@ -57,10 +58,18 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _stopScan() async {
+    await _scanSub?.cancel();
+    _scanSub = null;
+    await _central.stopScan();
+    setState(() { _status = 'idle'; _scanning = false; });
+  }
+
   Future<void> _connect(Peripheral p) async {
     await _scanSub?.cancel();
+    _scanSub = null;
     await _central.stopScan();
-    setState(() => _status = 'connecting…');
+    setState(() { _status = 'connecting…'; _scanning = false; });
     try {
       await _central.connect(p);
       _connected = p;
@@ -112,8 +121,13 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           Row(children: [
             ElevatedButton(
-                onPressed: _connected == null ? _startScan : null,
+                onPressed: (_connected == null && !_scanning)
+                    ? _startScan : null,
                 child: const Text('Scan')),
+            const SizedBox(width: 8),
+            ElevatedButton(
+                onPressed: _scanning ? _stopScan : null,
+                child: const Text('Stop')),
             const SizedBox(width: 8),
             ElevatedButton(
                 onPressed: _connected != null ? _disconnect : null,
