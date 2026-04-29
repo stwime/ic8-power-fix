@@ -3,9 +3,14 @@
 /// Spin-down fit gave: λ(R) = a·R + b per second, where
 /// dω/dt = -λ(R)·ω in coastdown (no rider torque).
 /// Multiply by I_crank·ω to get steady-state power dissipation.
+///
+/// Coefficients are from the CSC-based fit (R=5..33, RMS 0.012/s). High-R
+/// coastdowns (R>50) start below 95 rpm and decay in 3-4 seconds, which is
+/// too short to fit cleanly given 1 Hz CSC sampling — the linear extrapolation
+/// is consistent with both the clean low-R fits and rider pedal-feel.
 class Constants {
-  static const double aBrake = 0.00710;     // 1/(s · R-unit)
-  static const double bFriction = 0.0290;   // 1/s
+  static const double aBrake = 0.00673;     // 1/(s · R-unit)
+  static const double bFriction = 0.0320;   // 1/s
   static const double iCrank = 11.0;        // kg·m² (effective, at crank)
 
   /// FTMS BLE caps cadence at 125 rpm (uint16 at 0.5 rpm); treat ≥124 as suspect
