@@ -35,6 +35,7 @@ dependencies:
   bluetooth_low_energy: ^6.1.4
   wakelock_plus: ^1.6.0
   shared_preferences: ^2.3.0
+  app_settings: ^7.0.0
 
 dev_dependencies:
   flutter_test:

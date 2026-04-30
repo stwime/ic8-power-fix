@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_settings/app_settings.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -81,6 +82,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _authorize() async {
+    // The OS only shows the permission prompt once. If we're already in the
+    // unauthorized state the user denied it earlier and authorize() is a
+    // no-op — the only way out is the system Settings page.
+    if (_centralBleState == BluetoothLowEnergyState.unauthorized ||
+        _peripheralBleState == BluetoothLowEnergyState.unauthorized) {
+      await AppSettings.openAppSettings();
+      return;
+    }
     setState(() => _status = 'Asking for Bluetooth permission…');
     await CentralManager().authorize();
     await PeripheralManager().authorize();
@@ -166,6 +175,10 @@ class _HomePageState extends State<HomePage> {
     return needs(_centralBleState) || needs(_peripheralBleState);
   }
 
+  bool get _bleReady =>
+      _centralBleState == BluetoothLowEnergyState.poweredOn &&
+      _peripheralBleState == BluetoothLowEnergyState.poweredOn;
+
   @override
   Widget build(BuildContext context) {
     final s = _last;
@@ -205,7 +218,7 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           Row(children: [
             ElevatedButton(
-                onPressed: (_connected == null && !_scanning)
+                onPressed: (_connected == null && !_scanning && _bleReady)
                     ? _startScan : null,
                 child: const Text('Find bike')),
             const SizedBox(width: 8),
