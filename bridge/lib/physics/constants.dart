@@ -4,13 +4,20 @@
 /// dω/dt = -λ(R)·ω in coastdown (no rider torque).
 /// Multiply by I_crank·ω to get steady-state power dissipation.
 ///
-/// Coefficients are from the CSC-based fit (R=5..33, RMS 0.012/s). High-R
-/// coastdowns (R>50) start below 95 rpm and decay in 3-4 seconds, which is
-/// too short to fit cleanly given 1 Hz CSC sampling — the linear extrapolation
-/// is consistent with both the clean low-R fits and rider pedal-feel.
+/// Coefficients from the CSC-based fit, 15 clean coastdowns spanning R=1..45
+/// (RMS 0.016/s). Above R≈45 the rider can't reach 125 rpm, so coastdowns are
+/// too short to fit cleanly; the linear extrapolation is consistent with
+/// pedal-feel up to the R=100 hard stop.
+///
+/// `bFriction` is the y-intercept at R=0, i.e. residual drag with the dial at
+/// its bottom of travel. Despite the name, it is NOT classical Coulomb friction
+/// (decay is exponential not linear-in-time, ruling that out). It lumps belt
+/// drag, bearing drag, and any residual eddy drag from the magnet at its
+/// mechanical home position. The decomposition of `b` doesn't matter for the
+/// power correction — what matters is that λ(R) matches measurement.
 class Constants {
-  static const double aBrake = 0.00673;     // 1/(s · R-unit)
-  static const double bFriction = 0.0320;   // 1/s
+  static const double aBrake = 0.00573;     // 1/(s · R-unit)
+  static const double bFriction = 0.0359;   // 1/s — residual drag, not Coulomb friction
   static const double iCrank = 11.0;        // kg·m² (effective, at crank)
 
   /// FTMS BLE caps cadence at 125 rpm (uint16 at 0.5 rpm); treat ≥124 as suspect

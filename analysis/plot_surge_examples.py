@@ -23,8 +23,8 @@ OUT = ROOT / "docs/figures"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Bridge constants (mirrored in bridge/lib/physics/constants.dart).
-A_BRAKE = 0.00673
-B_FRICTION = 0.0320
+A_BRAKE = 0.00573
+B_FRICTION = 0.0359
 I_CRANK = 11.0
 
 
@@ -193,6 +193,10 @@ def spindown_fit():
     segs = find_clean_coastdowns(rows)
     Rs, lams, ns = [], [], []
     for seg, R in segs:
+        t0 = float(seg[0]["timestamp_s"])
+        # User-flagged bad run: first R=11 spindown, rider brushed a pedal.
+        if R == 11 and abs(t0 - 271.4) < 1.0:
+            continue
         t = np.array([float(r["timestamp_s"]) for r in seg])
         c = np.array([_csc(r) for r in seg], dtype=float)
         y = np.log(c)
@@ -221,7 +225,7 @@ def spindown_fit():
     ax.plot(rline, a * rline + b, color="#d62728", lw=2,
             label=f"λ(R) = {a:.5f}·R + {b:.4f}")
     ax.axhline(b, color="#888", ls=":", lw=1)
-    ax.text(rline[-1] * 0.02, b + 0.005, f"friction floor b = {b:.3f}",
+    ax.text(rline[-1] * 0.02, b + 0.005, f"residual-drag floor b = {b:.3f}",
             color="#555", fontsize=9)
     ax.set_xlabel("resistance dial R")
     ax.set_ylabel(r"flywheel decay rate $\lambda$ (1/s)")
