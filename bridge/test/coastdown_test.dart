@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ic8_bridge/physics/calibration.dart';
 import 'package:ic8_bridge/physics/coastdown.dart';
 
 CoastdownSample _s(double t, int r, double cad) =>
@@ -95,29 +96,128 @@ void main() {
       expect(fit.lambda, closeTo(0.05, 0.005));
       expect(fit.r2, greaterThan(0.95));
     });
+
+    test('per-revolution path: recovers λ from rev event times even when '
+        'BLE-row timestamps are misaligned', () {
+      // Synthesize rev events under ω(t) = ω₀ exp(-λ t). The avg cadence
+      // over an inter-rev interval equals the instantaneous cadence at the
+      // midpoint up to O((λ·dt)²/24), so we use a moderate λ and stop while
+      // dt stays small. Final cad ≥ 30 → λ·dt ≤ 0.14 → bias < 0.1%.
+      // The BLE-row timestampS values are deliberately offset from the rev
+      // event times — the per-rev path should ignore them and recover λ
+      // from the CSC-event timing.
+      const lambda = 0.07;
+      double cad = 120.0;
+      double evtTime = 100.0;
+      int revCount = 1000;
+      final rows = <CoastdownSample>[];
+      double bleT = 0.0;
+      while (cad >= 30.0) {
+        rows.add(CoastdownSample(
+          timestampS: bleT + 0.4,
+          resistance: 30,
+          cadenceRpmCsc: cad,
+          crankRevs: revCount,
+          crankEventTimeS: evtTime,
+        ));
+        final dt = 60.0 / cad;
+        evtTime += dt;
+        cad *= math.exp(-lambda * dt);
+        revCount += 1;
+        bleT += 1.0;
+      }
+      expect(rows.length, greaterThanOrEqualTo(20));
+      final fit = fitDecay(rows);
+      expect(fit.n, rows.length - 1);
+      // The avg-over-interval cadence equals the instantaneous cadence at
+      // the interval midpoint up to O((λ·dt)²/24) — a few percent at the
+      // tail of the synthesized coastdown. The fit is unbiased to within
+      // that floor, which is well below the per-segment scatter we see in
+      // real data and doesn't affect the model decision.
+      expect(fit.lambda, closeTo(lambda, 0.005));
+      expect(fit.r2, greaterThan(0.999));
+    });
   });
 
   group('fitBrake', () {
-    test('recovers (a, b) when input points lie exactly on λ(R) = a·R + b', () {
-      const a = 0.005;
-      const b = 0.04;
-      // Build clean coastdowns at three R values with λ = a·R + b.
+    test('falls back to 2-param fit (rc held fixed) when R range is narrow',
+        () {
+      // Three R values, max=60, range=50, but only 3 distinct R — the fitter
+      // holds R_c at its prior and only fits (α, β).
+      const alpha = 0.32;
+      const beta = 0.04;
+      final rc = Calibration.defaultRcDial;
+      const p = Calibration.defaultPHill;
       final allRows = <CoastdownSample>[];
       for (final r in [10, 30, 60]) {
-        final lam = a * r + b;
+        final rp = math.pow(r, p).toDouble();
+        final rcp = math.pow(rc, p).toDouble();
+        final lam = alpha * rp / (rp + rcp) + beta;
         final seg = _synth(
             r: r, lambda: lam, cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
-        // No spacer: the next run starts at cad 110 which is > the previous
-        // run's last sample, so findCleanCoastdowns naturally breaks here.
       }
       final pts = extractCoastdownPoints(allRows);
       expect(pts.length, 3);
       final fit = fitBrake(pts);
-      expect(fit.aBrake, closeTo(a, 1e-6));
-      expect(fit.bFriction, closeTo(b, 1e-6));
+      expect(fit.fittedRc, isFalse);
+      expect(fit.rc, closeTo(rc, 1e-9));
+      expect(fit.alpha, closeTo(alpha, 1e-6));
+      expect(fit.beta, closeTo(beta, 1e-6));
       expect(fit.rms, lessThan(1e-6));
+    });
+
+    test('recovers (α, β, R_c) when R range covers the knee', () {
+      // 5 distinct R values from R=8 to R=80 — well past the half-max knee
+      // and well below it — so R_c is identifiable.
+      const alpha = 0.30;
+      const beta = 0.045;
+      const rcTrue = 35.0; // intentionally different from defaultRcDial
+      const p = Calibration.defaultPHill;
+      final rcpTrue = math.pow(rcTrue, p).toDouble();
+      final allRows = <CoastdownSample>[];
+      for (final r in [8, 18, 30, 55, 80]) {
+        final rp = math.pow(r, p).toDouble();
+        final lam = alpha * rp / (rp + rcpTrue) + beta;
+        final seg = _synth(
+            r: r, lambda: lam, cad0: 110, nSamples: 8,
+            t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
+        allRows.addAll(seg);
+      }
+      final pts = extractCoastdownPoints(allRows);
+      expect(pts.length, 5);
+      final fit = fitBrake(pts);
+      expect(fit.fittedRc, isTrue);
+      expect(fit.rc, closeTo(rcTrue, 0.05));
+      expect(fit.alpha, closeTo(alpha, 1e-3));
+      expect(fit.beta, closeTo(beta, 1e-3));
+      expect(fit.rms, lessThan(1e-4));
+    });
+
+    test('uses caller-supplied fixedRc when falling back to 2-param', () {
+      // Same narrow range as the first test, but the caller's prior is the
+      // user's previously-fitted R_c (not the class default).
+      const alpha = 0.32;
+      const beta = 0.04;
+      const userRc = 36.5;
+      const p = Calibration.defaultPHill;
+      final rcpUser = math.pow(userRc, p).toDouble();
+      final allRows = <CoastdownSample>[];
+      for (final r in [10, 30, 60]) {
+        final rp = math.pow(r, p).toDouble();
+        final lam = alpha * rp / (rp + rcpUser) + beta;
+        final seg = _synth(
+            r: r, lambda: lam, cad0: 110, nSamples: 8,
+            t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
+        allRows.addAll(seg);
+      }
+      final pts = extractCoastdownPoints(allRows);
+      final fit = fitBrake(pts, fixedRc: userRc);
+      expect(fit.fittedRc, isFalse);
+      expect(fit.rc, closeTo(userRc, 1e-9));
+      expect(fit.alpha, closeTo(alpha, 1e-6));
+      expect(fit.beta, closeTo(beta, 1e-6));
     });
 
     test('streaming detector emits points as runs complete', () {

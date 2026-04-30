@@ -2,8 +2,10 @@
 show up in real recordings.
 
   * spindown_fit.png  — coastdowns at different R values give λ(R), the
-    decay rate of the flywheel. A line fit through λ(R) = a·R + b separates
-    brake (a) from friction (b). Same data, same fit as analysis/spindown_fit.py.
+    decay rate of the flywheel. A Hill fit
+    λ(R) = α·R^p / (R^p + R_c^p) + β separates brake from residual drag and
+    captures the dial's nonlinear bite at high R. Same data, same fit as
+    analysis/spindown_fit.py.
   * indoor_surge.png  — IC8 BLE log, cadence 8→67 rpm at R=28 (calibration
     grid). The corrected model decomposes power into steady + KE; you can
     see the KE bump while the rider spins the flywheel up, then it collapses
@@ -22,10 +24,18 @@ ROOT = Path(__file__).parent.parent
 OUT = ROOT / "docs/figures"
 OUT.mkdir(parents=True, exist_ok=True)
 
-# Bridge constants (mirrored in bridge/lib/physics/constants.dart).
-A_BRAKE = 0.00590
-B_FRICTION = 0.0362
-I_CRANK = 14.0
+# Bridge constants (mirrored in bridge/lib/physics/calibration.dart).
+LAMBDA_ALPHA = 0.207
+LAMBDA_BETA = 0.034
+LAMBDA_RC = 38.5
+LAMBDA_P = 1.90
+I_CRANK = 24.5
+
+
+def lambda_at(R):
+    R_pos = np.maximum(R, 0.0)
+    rp = R_pos ** LAMBDA_P
+    return LAMBDA_ALPHA * rp / (rp + LAMBDA_RC ** LAMBDA_P) + LAMBDA_BETA
 
 
 def _csc(row):
@@ -51,7 +61,7 @@ def indoor_surge():
             omegaDot[i] = (omega[i + 1] - omega[i - 1]) / (t[i + 1] - t[i - 1])
     omegaDot = np.convolve(omegaDot, np.ones(3) / 3, mode="same")
 
-    P_steady = (A_BRAKE * R + B_FRICTION) * I_CRANK * omega ** 2
+    P_steady = lambda_at(R) * I_CRANK * omega ** 2
     P_ke = I_CRANK * omega * omegaDot
     P_corr = np.maximum(0, P_steady + P_ke)
 
@@ -70,7 +80,7 @@ def indoor_surge():
     ax1.legend(loc="lower right")
 
     ax2.fill_between(tt, 0, P_steady[s:e], color="#aec7e8",
-                     label=r"steady $(aR+b)\cdot I\omega^2$", step="mid")
+                     label=r"steady $\lambda(R)\cdot I\omega^2$", step="mid")
     ax2.fill_between(tt, P_steady[s:e], P_steady[s:e] + np.maximum(P_ke[s:e], 0),
                      color="#ff9896", label=r"KE $I\omega\dot{\omega}$ (positive)",
                      step="mid", alpha=0.85)
@@ -159,44 +169,75 @@ def outdoor_surge():
 
 
 def spindown_fit():
-    """Plot per-coastdown λ values against R, with the linear fit overlaid.
-    Uses the canonical pooled fit defined in analysis/spindown_fit.py."""
+    """Plot per-coastdown λ values against R, with the Hill fit overlaid and
+    the linear fit drawn dashed for comparison. Uses the canonical pooled fit
+    defined in analysis/spindown_fit.py (per-revolution event timestamps)."""
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent))
     from spindown_fit import collect_segments
 
     results = collect_segments()
-    keep = [r for r in results if r["keep"]]
-    Rs = np.array([r["R"] for r in keep], dtype=float)
-    lams = np.array([r["lam"] for r in keep])
-    ns = np.array([r["n"] for r in keep])
-    sessions = np.array([r["label"] for r in keep])
+    kept = [r for r in results if r["keep"]]
+    Rs = np.array([r["R"] for r in kept], dtype=float)
+    lams = np.array([r["lam"] for r in kept])
+    ns = np.array([r["n"] for r in kept])
+    c0 = np.array([r["c0"] for r in kept])
+    c1 = np.array([r["c1"] for r in kept])
+    sessions = np.array([r["label"] for r in kept])
 
-    W = np.diag(np.sqrt(ns))
-    Amat = np.vstack([Rs, np.ones_like(Rs)]).T
-    (a, b), *_ = np.linalg.lstsq(W @ Amat, W @ lams, rcond=None)
-    rline = np.linspace(0, max(Rs.max(), 60), 100)
+    # Same weighting as analysis/spindown_fit.py:main — sqrt(n) · log(c0/c1).
+    w = np.sqrt(ns) * np.log(c0 / c1)
+    W = np.diag(w)
+
+    # Linear comparison line
+    A_lin = np.vstack([Rs, np.ones_like(Rs)]).T
+    (a_lin, b_lin), *_ = np.linalg.lstsq(W @ A_lin, W @ lams, rcond=None)
+
+    # Hill fit by 2D grid over (R_c, p), profiling (α, β) at each grid point.
+    # Matches the search bounds in analysis/spindown_fit.py.
+    best = None
+    for Rc_h in np.linspace(5.0, 120.0, 80):
+        for p in np.linspace(1.0, 8.0, 71):
+            u = Rs**p / (Rs**p + Rc_h**p)
+            A_h = np.vstack([u, np.ones_like(u)]).T
+            sol, *_ = np.linalg.lstsq(W @ A_h, W @ lams, rcond=None)
+            alpha, beta = sol
+            rss = float(np.sum(w**2 * (lams - (alpha * u + beta))**2))
+            if best is None or rss < best[0]:
+                best = (rss, Rc_h, p, alpha, beta)
+    _, Rc, p_h, alpha, beta = best
+
+    rline = np.linspace(0, max(Rs.max() + 5, 100), 200)
+    rline_p = np.maximum(rline, 0.0) ** p_h
+    hill_curve = alpha * rline_p / (rline_p + Rc ** p_h) + beta
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    colors = {"apr29": "#ff7f0e", "apr30": "#1f77b4"}
-    labels = {"apr29": "session 1", "apr30": "session 2"}
+    colors = {"apr29": "#ff7f0e", "apr30": "#1f77b4",
+              "super_high_r": "#2ca02c"}
+    labels = {"apr29": "session 1", "apr30": "session 2",
+              "super_high_r": "session 3"}
     for sess, color in colors.items():
         m = sessions == sess
         if not m.any(): continue
-        ax.scatter(Rs[m], lams[m], s=ns[m] * 8, c=color, alpha=0.8,
+        ax.scatter(Rs[m], lams[m], s=ns[m] * 6 + 20, c=color, alpha=0.85,
                    edgecolor="white", linewidth=1,
                    label=f"{labels[sess]} (n={m.sum()})")
-    ax.plot(rline, a * rline + b, color="#d62728", lw=2,
-            label=f"pooled fit  λ(R) = {a:.5f}·R + {b:.4f}")
-    ax.axhline(b, color="#888", ls=":", lw=1)
-    ax.text(rline[-1] * 0.02, b + 0.005, f"residual-drag floor b = {b:.3f}",
-            color="#555", fontsize=9)
+    ax.plot(rline, a_lin * rline + b_lin, color="#999", lw=1.4, ls="--",
+            label=f"linear fit  λ = {a_lin:.4f}·R + {b_lin:.4f}")
+    ax.plot(rline, hill_curve,
+            color="#d62728", lw=2.2,
+            label=f"Hill fit  λ = {alpha:.3f}·R^{p_h:.2f} / "
+                  f"(R^{p_h:.2f} + {Rc:.1f}^{p_h:.2f}) + {beta:.3f}")
+    ax.axhline(beta, color="#888", ls=":", lw=1)
+    ax.text(rline[-1] * 0.02, beta + 0.005,
+            f"residual drag β = {beta:.3f}", color="#555", fontsize=9)
     ax.set_xlabel("resistance dial R")
     ax.set_ylabel(r"flywheel decay rate $\lambda$ (1/s)")
-    ax.set_title("Spin-down calibration: λ(R) = a·R + b",
+    ax.set_title(r"Spin-down calibration: $\lambda(R) = \alpha\,R^p / (R^p + R_c^p) + \beta$",
                  fontsize=12, weight="bold")
-    ax.legend(loc="upper left")
+    ax.legend(loc="upper left", fontsize=9)
     ax.grid(True, alpha=0.3)
+    ax.set_xlim(0, rline[-1])
     fig.tight_layout()
     fig.savefig(OUT / "spindown_fit.png", dpi=140)
     print(f"wrote {OUT / 'spindown_fit.png'}")
@@ -214,7 +255,7 @@ def power_curves():
     colors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#d62728"]
     for R, color in zip([20, 30, 40, 50], colors):
         P_ic8 = 0.019 * R ** 0.83 * cad ** 1.5
-        P_corr = (A_BRAKE * R + B_FRICTION) * I_CRANK * omega ** 2
+        P_corr = lambda_at(R) * I_CRANK * omega ** 2
         ax.plot(cad, P_ic8, color=color, lw=1.4, ls="--", alpha=0.8)
         ax.plot(cad, P_corr, color=color, lw=2.2,
                 label=f"R = {R}")

@@ -15,10 +15,18 @@ const String _kCscMeasurement = '2A5B';
 
 /// One row in our internal stream. Mirrors what parse_nrf_log.py emits per FTMS
 /// notification: FTMS fields + most-recent CSC + derived CSC cadence.
+///
+/// [crankRevs] and [crankEventTimeS] are the latest CSC values as of this
+/// FTMS sample, with revs and event time both unwrapped to monotonic 32-bit
+/// counts and seconds. They feed the per-revolution coastdown fitter, which
+/// uses CSC event timing (1/1024 s precision) instead of the BLE-arrival
+/// timestamp [tS] (~0.5 s of jitter relative to the actual rev event).
 class IC8Sample {
   final double tS;
   final FtmsIndoorBikeData ftms;
   final double? cadenceRpmCsc;
+  final int? crankRevs;
+  final double? crankEventTimeS;
   final double? correctedW;
   final Corrector corrector;
 
@@ -26,6 +34,8 @@ class IC8Sample {
     required this.tS,
     required this.ftms,
     required this.cadenceRpmCsc,
+    required this.crankRevs,
+    required this.crankEventTimeS,
     required this.correctedW,
     required this.corrector,
   });
@@ -280,6 +290,8 @@ class IC8Central {
 
     _samples.add(IC8Sample(
       tS: tS, ftms: ftms, cadenceRpmCsc: cadCsc,
+      crankRevs: last?.crankRevs,
+      crankEventTimeS: last?.crankT,
       correctedW: corrected, corrector: corrector,
     ));
   }

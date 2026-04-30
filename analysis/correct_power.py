@@ -4,11 +4,15 @@ Input CSV: output of parse_nrf_log.py (FTMS fields + CSC fields per row).
 Output CSV: same columns + power_w_steady, power_w_ke, power_w_corrected.
 
 Model:
-    P_corrected = (a·R_smoothed + b) · I_crank · ω²  +  I_crank · ω · dω/dt
-                  └────── steady-state ──────┘     └───── KE term ─────┘
+    P_corrected = λ(R_smoothed) · I_crank · ω²  +  I_crank · ω · dω/dt
+                  └─────── steady-state ───────┘  └───── KE term ─────┘
+    λ(R) = α · R^p / (R^p + R_c^p) + β
 
-Where ω = cad·π/30 (rad/s). a, b are from the spin-down fit. I_crank is
-pinned by an outdoor anchor; default below; override with --i.
+Where ω = cad·π/30 (rad/s). α, R_c, p, β are from the spin-down fit
+(Hill form — physics-derived from the eddy-current B²(d) coupling; see
+analysis/spindown_fit.py for the comparison vs the linear and saturating
+alternatives). I_crank is pinned by an outdoor anchor; default below;
+override with --i.
 
 Implementation notes:
   * R is median-filtered (window 5) to kill the ±1 sensor jitter.
@@ -27,12 +31,14 @@ from pathlib import Path
 
 import numpy as np
 
-# Spin-down derived (analysis/spindown_fit.py).
+# Spin-down derived Hill-form fit (analysis/spindown_fit.py).
 # Keep in sync with bridge/lib/physics/calibration.dart defaults.
-A_BRAKE = 0.00590
-B_FRICTION = 0.0362
+LAMBDA_ALPHA = 0.207     # Hill-form brake amplitude (1/s)
+LAMBDA_BETA = 0.034      # residual drag at R=0 (1/s)
+LAMBDA_RC = 38.5         # half-max knee on the dial (R-units)
+LAMBDA_P = 1.90          # Hill exponent (dimensionless)
 # Inertia anchor (analysis/pin_inertia.py).
-DEFAULT_I_CRANK = 14.0
+DEFAULT_I_CRANK = 24.5
 # Saturation flags
 CAD_CAP = 124.0       # FTMS BLE cap is 125; treat anything ≥124 as suspect
 R_CAP = 100           # hard mechanical cap; brake locked, no useful info
@@ -96,8 +102,12 @@ def correct(rows_in, i_crank, r_smooth_window=5, dt_window=3):
         kernel = np.ones(dt_window) / dt_window
         omega_dot = np.convolve(omega_dot, kernel, mode="same")
 
-    # Physics
-    p_steady = (A_BRAKE * R_smooth + B_FRICTION) * i_crank * omega ** 2
+    # Physics — Hill form: λ(R) = α·R^p / (R^p + R_c^p) + β. Guard R=0
+    # explicitly to avoid 0**p evaluating funny at fractional p.
+    R_pos = np.maximum(R_smooth, 0.0)
+    rp = R_pos ** LAMBDA_P
+    lam_R = LAMBDA_ALPHA * rp / (rp + LAMBDA_RC ** LAMBDA_P) + LAMBDA_BETA
+    p_steady = lam_R * i_crank * omega ** 2
     p_ke = i_crank * omega * omega_dot
     p_corrected = p_steady + p_ke
 

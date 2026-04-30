@@ -40,6 +40,8 @@ class _CoastdownPageState extends State<CoastdownPage> {
         timestampS: s.tS,
         resistance: s.ftms.resistance ?? 0,
         cadenceRpmCsc: csc ?? 0.0,
+        crankRevs: s.crankRevs,
+        crankEventTimeS: s.crankEventTimeS,
       ));
       if (mounted) setState(() {});
     });
@@ -64,8 +66,9 @@ class _CoastdownPageState extends State<CoastdownPage> {
     );
     if (ok != true) return;
     await widget.calibration.setBrakeFit(
-      aBrake: fit.aBrake,
-      bFriction: fit.bFriction,
+      alpha: fit.alpha,
+      beta: fit.beta,
+      rc: fit.rc,
     );
     if (!mounted) return;
     messenger.showSnackBar(const SnackBar(
@@ -250,6 +253,7 @@ class _FitPreviewDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final body = Theme.of(context).textTheme.bodyMedium;
+    final small = Theme.of(context).textTheme.bodySmall;
     final maxResid = fit.residuals
         .map((r) => (r.measured - r.predicted).abs())
         .reduce((a, b) => a > b ? a : b);
@@ -264,8 +268,20 @@ class _FitPreviewDialog extends StatelessWidget {
         const SizedBox(height: 12),
         Text('Fit quality: ${_overall(fit.rms, maxResid)}', style: body),
         const SizedBox(height: 8),
+        Text(
+            fit.fittedRc
+                ? 'Your measurements span enough resistance levels to also '
+                    'estimate the half-max knee R_c. All three parameters '
+                    'were fit from your data.'
+                : 'The half-max knee R_c was held at the default '
+                    '(${fit.rc.toStringAsFixed(1)}) — your measurements '
+                    'don\'t span enough resistance levels to fit it. Add a '
+                    'few coastdowns at higher R (≥40) and at lower R (≤15) '
+                    'if you want it estimated for your bike.',
+            style: small),
+        const SizedBox(height: 8),
         Text('You can run the calibration again anytime if you want to '
-            'improve it.', style: Theme.of(context).textTheme.bodySmall),
+            'improve it.', style: small),
       ]),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false),

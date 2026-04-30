@@ -8,8 +8,8 @@ Method:
   3. For matched cadence + HR bins, take median outdoor and indoor power.
   4. Back-solve indoor R from the IC8 closed-form  P_b = κ·R^N_R·cad^N_CAD
      (constants below, fit once from the IC8 broadcast itself).
-  5. Apply physics:  P_true = (A_BRAKE·R + B_FRICTION)·I·ω²,  ω = cad·π/30,
-     using the shipped spin-down fit.
+  5. Apply physics:  P_true = λ(R)·I·ω²,  ω = cad·π/30,
+     λ(R) = α·R^p / (R^p + R_c^p) + β,  using the shipped spin-down fit.
   6. Solve I per bin and take the median across bins.
 
 Why this is a fair anchor: the IC8's closed-form is just a per-bike calibration
@@ -31,9 +31,11 @@ IND_PATHS = ["data/IC bike/ROUVY_Güímar_Tenerife.fit",
              "data/IC bike/ROUVY_Cumbre_del_Sol_Spain.fit",
              "data/IC bike/MyWhoosh_Capital_Circuit.fit"]
 
-# Spin-down derived brake/residual drag:
-A_BRAKE = 0.00590     # 1/(s · R-unit)
-B_FRICTION = 0.0362   # 1/s — residual drag, not Coulomb friction
+# Spin-down derived Hill-form fit (analysis/spindown_fit.py):
+LAMBDA_ALPHA = 0.207     # Hill-form brake amplitude (1/s)
+LAMBDA_BETA = 0.034      # residual drag at R=0 (1/s)
+LAMBDA_RC = 38.5         # half-max knee on the dial (R-units)
+LAMBDA_P = 1.90          # Hill exponent (dimensionless)
 # IC8 closed-form fit (from earlier calibration analysis):
 KAPPA = 0.0148
 N_R = 0.79
@@ -157,7 +159,9 @@ def main():
         cad_c = c + 2.5
         R = back_solve_R(med_i, cad_c)
         omega = cad_c * np.pi / 30.0
-        phys_per_I = (A_BRAKE * R + B_FRICTION) * omega ** 2
+        rp = max(R, 0.0) ** LAMBDA_P
+        lam_R = LAMBDA_ALPHA * rp / (rp + LAMBDA_RC ** LAMBDA_P) + LAMBDA_BETA
+        phys_per_I = lam_R * omega ** 2
         I_est = med_o / phys_per_I
         weight = 2.0 / (1.0 / m_o.sum() + 1.0 / m_i.sum())
         estimates.append((cad_c, I_est, weight, R, med_o, med_i))

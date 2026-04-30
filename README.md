@@ -95,34 +95,48 @@ and the total goes to zero (the rider isn't doing work).
 ### Where the constants come from
 
 **`λ(R)` from spin-downs.** With no rider input, the flywheel decelerates
-as `ω(t) = ω₀·exp(-λ(R)·t)`. Each coastdown gives one λ at one R.
+as `ω(t) = ω₀·exp(-λ(R)·t)`. Each coastdown gives one λ at one R, fit on
+the per-revolution CSC event timestamps (1/1024 s precision) so high-R /
+short coastdowns aren't dominated by ~0.5 s of BLE-arrival jitter.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
 The dashed grey line is a linear `λ(R) = a·R + b` — it matches at low to
-mid R but diverges sharply above R ≈ 45. The brake response saturates,
-which makes physical sense: the dial moves a permanent magnet toward the
-flywheel, and magnetic coupling is nonlinear with diminishing returns
-once the magnet is close. So we fit a saturating form:
+mid R but undershoots high R systematically. The brake response is
+nonlinear: the dial moves a permanent magnet toward the flywheel, and
+the eddy-current torque scales with `B²(d)` where `B` is field strength
+and `d` is the magnet-flywheel gap. Far-field `B ∝ 1/d^k` with k ≈ 3–6,
+so `B²` is a power-law in gap and `λ(R)` follows a Hill form:
 
 ```
-λ(R) = α · (1 − exp(−R / R_c)) + β
+λ(R) = α · R^p / (R^p + R_c^p) + β
 ```
 
-Pooled fit on 31 coastdowns spanning R = 1…80:
+`p` is the effective power-law exponent and `R_c` is the half-max knee
+(the dial position where `λ − β` reaches `α/2`). Pooled fit on 31
+coastdowns spanning R = 1…80:
 
 ```
-α = 0.320 / s    (saturating brake amplitude)
-R_c = 41.2       (dial saturation knee)
-β = 0.032 / s    (residual drag at R = 0)
+α   = 0.207 / s    (Hill brake amplitude)
+β   = 0.034 / s    (residual drag at R = 0)
+R_c = 38.5         (dial half-max knee)
+p   = 1.90         (Hill exponent — held fixed across bikes)
 ```
+
+The Hill form cuts weighted RSS 24% over the saturating
+`α·(1−exp(−R/R_c))+β` and 27% over linear, with bucket residuals flat
+across all R buckets to within ±0.005 / s. Auto-calibrate fits `α`, `β`,
+and (when the user's coastdowns span enough R) `R_c` per-bike; `p` is
+held fixed at 1.90 since it reflects the brake-mechanism geometry, not
+per-unit calibration variation.
 
 **`I` from outdoor anchors.** With λ(R) known, the only unknown is `I`.
 Matching outdoor 4iiii crank-meter sessions to indoor sessions in HR +
-cadence bins back-solves `I ≈ 14 kg·m²` near typical riding cadence.
-That sits in the middle of what a ~6:1-belted ~18 kg ring-loaded flywheel
-would have on physics alone (10–18 kg·m²), so the number is consistent
-with the hardware. The in-app **Power scale** slider absorbs leftover
+cadence bins back-solves `I ≈ 24.5 kg·m²` near typical riding cadence.
+That implies a flywheel-to-crank gear ratio of ~9 (with an
+~0.29 kg·m² flywheel), a bit higher than the documented 6:1 — likely
+because the back-solve absorbs unmodelled rolling losses and ω-vs-time
+shape mismatch. The in-app **Power scale** slider absorbs leftover
 offset against an external reference.
 
 ## Reality check: the model decomposes a sprint cleanly
@@ -165,7 +179,7 @@ isn't possible regardless of what you pair it to.
 ## Limitations
 
 - **Absolute scale depends on your unit.** The *shape* of the correction
-  (cad², saturating λ(R)) is physics-derived and solid. The
+  (cad², Hill λ(R)) is physics-derived and solid. The
   multiplicative offset depends on your bike's dial calibration and on
   the inertia anchor — Auto-calibrate fits the first; the Power scale
   slider absorbs the second.
@@ -187,7 +201,8 @@ bridge/lib/ble/                  BLE central + peripheral
 bridge/lib/physics/              corrector + coastdown fit (Dart port of
                                  spindown_fit.py — what Auto-calibrate runs)
 analysis/parse_nrf_log.py        nRF Connect log -> CSV (FTMS + CSC joined)
-analysis/spindown_fit.py         CSV of coastdowns -> α, R_c, β
+analysis/spindown_fit.py         CSV of coastdowns -> α, β, R_c, p (Hill fit
+                                 on per-rev CSC event timestamps)
 analysis/pin_inertia.py          outdoor 4iiii FIT files -> I_crank
 analysis/correct_power.py        offline reprocessor (Python mirror of the
                                  Dart corrector)

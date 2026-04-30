@@ -24,8 +24,7 @@ void main() {
         );
       }
       final omega = cad * math.pi / 30.0;
-      final expected =
-          (cal.aBrake * r + cal.bFriction) * cal.iCrank * omega * omega;
+      final expected = cal.lambdaAt(r.toDouble()) * cal.iCrank * omega * omega;
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 0.5));
       expect(c.lastKeW.abs(), closeTo(0, 1e-6));
@@ -69,8 +68,7 @@ void main() {
                    cadenceRpmFtms: Constants.cadCap);
       }
       const omega = Constants.cadCap * math.pi / 30.0;
-      final expected =
-          (cal.aBrake * 30 + cal.bFriction) * cal.iCrank * omega * omega;
+      final expected = cal.lambdaAt(30.0) * cal.iCrank * omega * omega;
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 0.5));
     });
@@ -88,8 +86,7 @@ void main() {
                    cadenceRpmFtms: 130.0);
       }
       const omega = Constants.cadCap * math.pi / 30.0;
-      final expected =
-          (cal.aBrake * 30 + cal.bFriction) * cal.iCrank * omega * omega;
+      final expected = cal.lambdaAt(30.0) * cal.iCrank * omega * omega;
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 0.5));
     });
@@ -125,8 +122,7 @@ void main() {
       final p = c.push(timestampS: 5, resistance: 80, cadenceRpm: 80,
                        csCadenceAvailable: true, cadenceRpmFtms: 80);
       const omega = 80.0 * math.pi / 30.0;
-      final expected =
-          (cal.aBrake * 30 + cal.bFriction) * cal.iCrank * omega * omega;
+      final expected = cal.lambdaAt(30.0) * cal.iCrank * omega * omega;
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 1.0));
     });
