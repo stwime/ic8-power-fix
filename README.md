@@ -78,7 +78,7 @@ $$P_{\text{KE}} = I\,\omega\,\frac{d\omega}{dt}$$
 
 Total rider input is the sum:
 
-$$P_{\text{corrected}} = \lambda(R)\,I\,\omega^2 \;+\; I\,\omega\,\frac{d\omega}{dt}$$
+$$P_{\text{corrected}} = \lambda(R)\,I\,\omega^2 + I\,\omega\,\frac{d\omega}{dt}$$
 
 At steady cadence the second term is zero. During a sprint launch it
 adds the work to spin up the flywheel; during a coastdown it subtracts
