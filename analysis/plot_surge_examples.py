@@ -25,7 +25,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 # Bridge constants (mirrored in bridge/lib/physics/constants.dart).
 A_BRAKE = 0.00573
 B_FRICTION = 0.0359
-I_CRANK = 11.0
+I_CRANK = 12.4
 
 
 def _csc(row):

@@ -24,9 +24,9 @@ OUT_PATHS = ["data/Lunch_Ride.fit", "data/Lunch_Ride-2.fit",
 IND_PATHS = ["data/ROUVY_Güímar_Tenerife.fit",
              "data/ROUVY_IRONMAN_70_3_Sunshine_Coast_1st_loop_.fit"]
 
-# Spin-down derived brake/friction:
-A_BRAKE = 0.00710     # 1/(s · R-unit), brake coefficient / I_crank
-B_FRICTION = 0.0290   # 1/s, friction coefficient / I_crank
+# Spin-down derived brake/residual drag:
+A_BRAKE = 0.00573     # 1/(s · R-unit)
+B_FRICTION = 0.0359   # 1/s — residual drag, not Coulomb friction
 # IC8 closed-form fit (from earlier calibration analysis):
 KAPPA = 0.0148
 N_R = 0.79

@@ -18,7 +18,7 @@
 class Constants {
   static const double aBrake = 0.00573;     // 1/(s · R-unit)
   static const double bFriction = 0.0359;   // 1/s — residual drag, not Coulomb friction
-  static const double iCrank = 11.0;        // kg·m² (effective, at crank)
+  static const double iCrank = 12.4;        // kg·m² (effective, at crank)
 
   /// FTMS BLE caps cadence at 125 rpm (uint16 at 0.5 rpm); treat ≥124 as suspect
   /// and prefer CSC-derived cadence in that case.

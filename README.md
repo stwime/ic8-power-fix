@@ -39,7 +39,7 @@ training app sees from the bike; solid lines are what the bridge re-broadcasts:
 The gap is largest at low cadence (where the IC8's `cad^1.5` overshoots
 real `cad²` physics) and at high R (where the absolute scale is most off).
 At a typical hard zone of R ≈ 40 / cad ≈ 90, the bike reads ~348 W and the
-bridge says ~259 W.
+bridge says ~292 W.
 
 ## The fix: physics-based correction
 
@@ -113,15 +113,15 @@ near R = 1 the bike is almost free-spinning and the residual drag is what
 you feel.
 
 **`I` from one outdoor anchor.** With λ(R) known, the only remaining
-unknown is `I`. We pin it from a single matched-effort outdoor reference:
-real power from the 4iiii at known HR + cadence pegs the absolute scale,
-and `I = 11.0 kg·m²` (effective at the crank) makes it self-consistent.
-This is the weakest link in the pipeline — it's a single anchor — but
-order-of-magnitude it's right (a 9 kg flywheel geared up at the crank
-gives an effective inertia in this range). Note: `I` was originally
-pinned against the previous (`a=0.00673, b=0.0320`) fit; with the updated
-spindown constants the absolute scale shifts by ~12% and `I` may need
-re-pinning against a fresh outdoor session.
+unknown is `I`. We pin it from a single matched-effort outdoor reference
+(4iiii crank meter on a snow ride, matched HR + cadence bins): `I = 12.4
+kg·m²` (effective at the crank) preserves the originally measured ~18% NP
+gap with the IC8 broadcast. This is the weakest link in the pipeline —
+it's a single anchor, and the per-cadence-bin estimates spread from ~10
+(high cad) to ~18 (low cad), which suggests the steady-state model's `cad²`
+isn't a perfect description (real eddy-current physics may have a
+sub-quadratic correction at high speed). I=12.4 is a reasonable single
+compromise; expect a few percent error at the cadence extremes.
 
 ## Reality checks
 
