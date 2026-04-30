@@ -7,22 +7,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// Brake/residual drag use a power-law form
 ///     λ(R) = α · R^p + β
-/// fit on cumulative-angle spindowns (analysis/fit_lambda_R_v3.py).
-/// Over IC8's R ∈ [0, 89] the brake never reaches saturation, so the
-/// earlier 4-parameter Hill form λ(R) = α·R^p/(R^p+R_c^p) + β collapsed to
-/// a power-law with R_c far above the dial range — adding R_c didn't
-/// improve fit quality (wRMS) and left R_c unidentified. The simpler
-/// power-law has the same wRMS with one fewer parameter.
+/// fit on the full ω(t) spin-down trajectories (analysis/fit_saturating.py),
+/// which supersedes the earlier per-segment-λ aggregation in
+/// fit_lambda_R_v3.py. The trajectory-based fit weights each spindown
+/// equally regardless of rev count, removing the high-R fitted-λ bias
+/// that pushed p up to 1.646 in the older aggregation; the new fit
+/// converges on a milder p ≈ 1.33.
+///
+/// A saturating-torque model τ = c(R)·ω*·tanh(ω/ω*) was tested in the
+/// same fit framework. The optimum runs ω* → ∞ at every p — the data
+/// shape is consistent with pure exponential decay across the full
+/// observed ω-range and an extra saturation parameter doesn't earn
+/// its keep on RSS.
 ///
 /// The exponent [defaultPower] is held fixed across bikes — it reflects
 /// the brake-mechanism geometry (eddy-current B²(d) coupling), not
 /// per-unit calibration variation, so we don't expose it in the
 /// auto-calibration flow. Only (α, β) are fit per bike. See [Coastdown.fitBrake].
 class Calibration {
-  static const double defaultAlpha = 0.001020;  // 1/s · R^-p — power-law amp
-  static const double defaultBeta = 0.0252;     // 1/s — residual drag at R=0
-  static const double defaultPower = 1.646;     // dimensionless — brake exponent
-  static const double defaultICrank = 9.3;      // kg·m² (effective, at crank)
+  static const double defaultAlpha = 0.000932;  // 1/s · R^-p — power-law amp
+  static const double defaultBeta = 0.0355;     // 1/s — residual drag at R=0
+  static const double defaultPower = 1.33;      // dimensionless — brake exponent
+  static const double defaultICrank = 22.9;     // kg·m² (effective, at crank)
 
   /// Bounds for the I_crank slider. Wide enough to cover any plausible
   /// indoor-cycle bike, from a light entry-level FTMS bike with a small

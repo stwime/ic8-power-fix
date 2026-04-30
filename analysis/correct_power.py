@@ -9,10 +9,11 @@ Model:
     λ(R) = α · R^p + β
 
 Where ω = cad·π/30 (rad/s). α, p, β are from the spin-down fit
-(power-law form — over IC8's R ∈ [0, 89] the brake never reaches saturation
-so adding a Hill-style R_c knee parameter doesn't improve fit; see
-analysis/fit_lambda_R_v3.py). I_crank is pinned by an outdoor anchor;
-default below; override with --i.
+(power-law form, fit on full ω(t) trajectories — see
+analysis/fit_saturating.py). A saturating-torque alternative was
+tested in the same fit framework; the optimum collapsed to pure
+exponential and the saturation parameter didn't earn its keep on RSS.
+I_crank is pinned by an outdoor anchor; default below; override with --i.
 
 Implementation notes:
   * R is median-filtered (window 5) to kill the ±1 sensor jitter.
@@ -31,13 +32,14 @@ from pathlib import Path
 
 import numpy as np
 
-# Spin-down derived power-law fit (analysis/fit_lambda_R_v3.py).
+# Spin-down derived power-law fit (analysis/fit_saturating.py — trajectory-
+# based, supersedes fit_lambda_R_v3.py's per-segment-λ aggregation).
 # Keep in sync with bridge/lib/physics/calibration.dart defaults.
-LAMBDA_ALPHA = 0.001020  # power-law brake amplitude (1/s · R^-p)
-LAMBDA_BETA = 0.0252     # residual drag at R=0 (1/s)
-LAMBDA_P = 1.646         # brake exponent (dimensionless)
+LAMBDA_ALPHA = 0.000932  # power-law brake amplitude (1/s · R^-p)
+LAMBDA_BETA = 0.0355     # residual drag at R=0 (1/s)
+LAMBDA_P = 1.33          # brake exponent (dimensionless)
 # Inertia anchor (analysis/pin_inertia.py).
-DEFAULT_I_CRANK = 9.3
+DEFAULT_I_CRANK = 22.9
 # Saturation flags
 CAD_CAP = 124.0       # FTMS BLE cap is 125; treat anything ≥124 as suspect
 R_CAP = 100           # hard mechanical cap; brake locked, no useful info

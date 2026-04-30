@@ -31,10 +31,11 @@ IND_PATHS = ["data/IC bike/ROUVY_Güímar_Tenerife.fit",
              "data/IC bike/ROUVY_Cumbre_del_Sol_Spain.fit",
              "data/IC bike/MyWhoosh_Capital_Circuit.fit"]
 
-# Spin-down derived power-law fit (analysis/fit_lambda_R_v3.py):
-LAMBDA_ALPHA = 0.001020  # power-law brake amplitude (1/s · R^-p)
-LAMBDA_BETA = 0.0252     # residual drag at R=0 (1/s)
-LAMBDA_P = 1.646         # brake exponent (dimensionless)
+# Spin-down derived power-law fit (analysis/fit_saturating.py — trajectory-
+# based; supersedes the per-segment-λ aggregation in fit_lambda_R_v3.py).
+LAMBDA_ALPHA = 0.000932  # power-law brake amplitude (1/s · R^-p)
+LAMBDA_BETA = 0.0355     # residual drag at R=0 (1/s)
+LAMBDA_P = 1.33          # brake exponent (dimensionless)
 # IC8 closed-form fit (from earlier calibration analysis):
 KAPPA = 0.0148
 N_R = 0.79

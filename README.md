@@ -59,9 +59,12 @@ the bridge re-broadcasts:
 
 ![IC8 vs corrected power curves](docs/figures/power_curves.png)
 
-The gap is largest at low cadence (where $\text{cad}^{1.5}$ overshoots
-$\text{cad}^2$) and at high $R$. Above cad ≈ 100 the bridge can read
-slightly higher than the bike — see the structural-limit note below.
+Across most of the operating envelope the bridge sits below the IC8
+broadcast — the IC8's $\text{cad}^{1.5}$ inflates relative to the
+physics-derived $\text{cad}^2$, and our $\lambda(R)$ has milder
+$R$-growth than the IC8's $R^{0.83}$. The two converge near
+cadence ≈ 110-115 at $R = 50$, where the bridge can briefly read
+slightly higher than the bike.
 
 ## The fix
 
@@ -87,47 +90,51 @@ and the total goes to zero (the rider isn't doing work).
 ### Where the constants come from
 
 **$\lambda(R)$ from spin-downs.** With no rider input, the flywheel
-decelerates as $\omega(t) = \omega_0\,e^{-\lambda(R)\,t}$. Each coastdown
-gives one $\lambda$ at one $R$, fit on the per-revolution CSC event
-timestamps (1/1024 s precision) so high-$R$ / short coastdowns aren't
-dominated by ~0.5 s of BLE-arrival jitter.
-
-![Spin-down calibration](docs/figures/spindown_fit.png)
-
-The dashed grey line is a linear $\lambda(R) = a\,R + b$ — it matches at
-low to mid $R$ but undershoots high $R$ systematically. The brake
+decelerates as $\omega(t) = \omega_0\,e^{-\lambda(R)\,t}$. The brake
 response is nonlinear: the dial moves a permanent magnet toward the
 flywheel, and the eddy-current torque scales with $B^2(d)$ where $B$ is
 field strength and $d$ is the magnet-flywheel gap. Far-field
-$B \propto 1/d^k$ with $k \approx 3\text{–}6$, so $B^2$ is a power-law
-in gap and $\lambda(R)$ follows a power-law form:
+$B \propto 1/d^k$ with $k \approx 3\text{–}6$, so $\lambda(R)$ follows
+a power-law:
 
 $$\lambda(R) = \alpha \cdot R^p + \beta$$
 
-Fit on per-segment video-derived spindowns (cumulative-angle integration,
-gravity-pendulum subtracted at low $R$ via phase-locked sampling at full
-crank-rev marks):
+Fit jointly on the full $\omega(t)$ trajectory of every coastdown
+(BLE/CSC per-rev timing + cumulative-angle integration of crank video at
+high $R$), weighted so each segment contributes equally:
 
-- $\alpha = 1.020 \times 10^{-3}\ \text{s}^{-1}\,R^{-p}$ — power-law brake amplitude
-- $\beta = 0.0252\ \text{s}^{-1}$ — residual drag at $R = 0$
-- $p = 1.646$ — brake exponent (held fixed across bikes)
+- $\alpha = 9.32 \times 10^{-4}\ \text{s}^{-1}\,R^{-p}$ — power-law brake amplitude
+- $\beta = 0.0355\ \text{s}^{-1}$ — residual drag at $R = 0$
+- $p = 1.33$ — brake exponent (held fixed across bikes)
 
-The power-law form cuts weighted RSS 4× over linear and 4× over the
-saturating $\alpha\,(1 - e^{-R/R_c}) + \beta$. The earlier Hill form
-$\alpha\,R^p/(R^p + R_c^p) + \beta$ fit indistinguishably (same wRMS) but
-with $R_c$ pinning at ~180 — well past the dial's $R \le 89$ range — so
-its 4th parameter ($R_c$) was unidentified and the curve collapsed to a
-power-law in our regime. We dropped it to keep the calibration parsimonious.
+![Spin-down calibration](docs/figures/spindown_fit.png)
+
+The dots are per-segment $\lambda$ values from individual exponential
+fits — useful as context. The shipped curve sits below them at high $R$
+on purpose: each high-$R$ spindown only spans a narrow low-$\omega$
+band (the brake stops the wheel before $\omega$ can grow), so the
+per-segment $\lambda$ averaged over that biased $\omega$ window is not
+the same number as the brake's true $\lambda$ at riding cadence. The
+trajectory fit weights the entire $\omega(t)$ shape across all
+segments instead of collapsing each one to a single number, and lands
+at a milder $p$ that gives sensible predictions at high $R$ + high
+cadence (the older $p = 1.646$ aggregation predicted $\approx 975$ W at
+$R=50$, cad=120, which doesn't match rider experience).
+
+A saturating-torque alternative $\tau = c(R)\,\omega^* \tanh(\omega/\omega^*)$
+was tested in the same fit framework (`analysis/fit_saturating.py`).
+The optimum runs $\omega^* \to \infty$ at every $p$ — the data shape
+is consistent with pure exponential decay, and an extra saturation
+parameter doesn't earn its keep on RSS.
+
 Auto-calibrate fits $\alpha$ and $\beta$ per-bike; $p$ is held fixed at
-1.646 since it reflects the brake-mechanism geometry.
+1.33 since it reflects the brake-mechanism geometry.
 
 **$I$ from outdoor anchors.** With $\lambda(R)$ known, the only unknown
 is $I$. Matching outdoor 4iiii crank-meter sessions to indoor sessions
-in HR + cadence bins back-solves $I \approx 9.3\ \text{kg}\,\text{m}^2$
-near typical riding cadence. That implies a flywheel-to-crank gear ratio
-of ~5.7 (with an $\sim 0.29\ \text{kg}\,\text{m}^2$ flywheel), in line
-with the documented 6:1 IC8 gearing. The in-app **Power scale** slider
-absorbs leftover offset against an external reference.
+in HR + cadence bins back-solves $I \approx 22.9\ \text{kg}\,\text{m}^2$
+(`analysis/pin_inertia.py`). The in-app **Power scale** slider absorbs
+leftover offset against an external reference.
 
 ## Reality check: the model decomposes a sprint cleanly
 
@@ -177,12 +184,15 @@ isn't possible regardless of what you pair it to.
   Above the cap, the bridge falls back to CSC-derived cadence if the
   bike exposes CSC; otherwise it clamps and slightly underestimates
   sprint power.
-- **Structural limit at high cadence.** Because
-  $\text{cad}^2 / \text{cad}^{1.586} \propto \text{cad}^{0.414}$, the
-  correction shrinks as cadence grows. If the firmware overstates power
-  *more* at high cadence on your bike, this model can't fully represent
-  that — a sub-quadratic cadence exponent would be needed, which
-  requires bilateral indoor truth across a cadence sweep.
+- **Cadence exponent locked at $\omega^2$.** The eddy-brake low-speed
+  limit gives $\tau \propto \omega$ and so $P \propto \omega^2$, and the
+  joint trajectory fit on our spindowns is consistent with that across
+  the observed $\omega$ range. If your bike's brake actually transitions
+  out of the low-speed regime at a cadence inside your riding envelope
+  (saturation, where $P \propto \omega$ at high $\omega$), the bridge
+  will overshoot at high cadence. Disambiguating that needs bilateral
+  indoor truth — a power meter on the cranks during an indoor cadence
+  sweep at a couple of $R$ values.
 
 ## Repository layout
 

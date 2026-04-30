@@ -24,10 +24,10 @@ OUT = ROOT / "docs/figures"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Bridge constants (mirrored in bridge/lib/physics/calibration.dart).
-LAMBDA_ALPHA = 0.001020
-LAMBDA_BETA = 0.0252
-LAMBDA_P = 1.646
-I_CRANK = 9.3
+LAMBDA_ALPHA = 0.000932
+LAMBDA_BETA = 0.0355
+LAMBDA_P = 1.33
+I_CRANK = 22.9
 
 
 def lambda_at(R):
@@ -167,10 +167,14 @@ def outdoor_surge():
 
 
 def spindown_fit():
-    """Plot per-coastdown λ values against R, with the power-law fit
-    overlaid and the linear fit drawn dashed for comparison. Uses the
-    canonical fit defined in analysis/fit_lambda_R_v3.py (video-derived
-    bounds, phase-locked at low R, two-term elsewhere)."""
+    """Plot per-coastdown λ values against R, plus the trajectory-based
+    (α, β, p) fit (analysis/fit_saturating.py) overlaid. The dots come
+    from the per-segment exponential fit (analysis/fit_lambda_R_v3.py
+    style) — useful as context, but each one is biased high at high R
+    because that segment only spans low ω. The shipped (α, β, p) come
+    from joint trajectory fitting that side-steps that bias; the red
+    curve below is what the bridge actually uses, and it deliberately
+    sits below the high-R dots because those dots over-state λ."""
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent))
     from fit_lambda_R_v3 import collect_lambdas
@@ -180,27 +184,10 @@ def spindown_fit():
     lams = np.array([r["lam"] for r in rows])
     w = np.array([r["weight"] for r in rows])
     sources = np.array([r["source"] for r in rows])
-    W = np.diag(w)
-
-    # Linear comparison line.
-    A_lin = np.vstack([Rs, np.ones_like(Rs)]).T
-    (a_lin, b_lin), *_ = np.linalg.lstsq(W @ A_lin, W @ lams, rcond=None)
-
-    # Power-law fit by 1D grid over p, profiling (α, β) at each grid point.
-    Rs_safe = np.where(Rs == 0, 1.0, Rs)
-    best = None
-    for p in np.linspace(1.30, 2.20, 901):
-        u = np.where(Rs == 0, 0.0, Rs_safe**p)
-        A = np.vstack([u, np.ones_like(u)]).T
-        sol, *_ = np.linalg.lstsq(W @ A, W @ lams, rcond=None)
-        alpha_p, beta_p = sol
-        rss = float(np.sum(w**2 * (lams - (alpha_p * u + beta_p))**2))
-        if best is None or rss < best[0]:
-            best = (rss, p, alpha_p, beta_p)
-    _, p_pow, alpha, beta = best
 
     rline = np.linspace(0, max(Rs.max() + 5, 100), 200)
-    pow_curve = np.where(rline > 0, alpha * rline**p_pow, 0.0) + beta
+    pow_curve = np.where(rline > 0,
+                         LAMBDA_ALPHA * rline**LAMBDA_P, 0.0) + LAMBDA_BETA
 
     fig, ax = plt.subplots(figsize=(8, 5))
     color_v3 = "#1f77b4"
@@ -210,15 +197,14 @@ def spindown_fit():
         if not mask.any(): continue
         ax.scatter(Rs[mask], lams[mask], s=w[mask] * 4 + 20, c=color, alpha=0.85,
                    edgecolor="white", linewidth=1,
-                   label=f"{label} (n={mask.sum()})")
-    ax.plot(rline, a_lin * rline + b_lin, color="#999", lw=1.4, ls="--",
-            label=f"linear fit  λ = {a_lin:.4f}·R + {b_lin:.4f}")
+                   label=f"per-segment λ — {label} (n={mask.sum()})")
     ax.plot(rline, pow_curve,
             color="#d62728", lw=2.2,
-            label=f"power-law fit  λ = {alpha:.5f}·R^{p_pow:.3f} + {beta:.4f}")
-    ax.axhline(beta, color="#888", ls=":", lw=1)
-    ax.text(rline[-1] * 0.02, beta + 0.005,
-            f"residual drag β = {beta:.3f}", color="#555", fontsize=9)
+            label=f"shipped fit  λ = {LAMBDA_ALPHA:.5f}·R^{LAMBDA_P:.2f} "
+                  f"+ {LAMBDA_BETA:.4f}")
+    ax.axhline(LAMBDA_BETA, color="#888", ls=":", lw=1)
+    ax.text(rline[-1] * 0.02, LAMBDA_BETA + 0.01,
+            f"residual drag β = {LAMBDA_BETA:.3f}", color="#555", fontsize=9)
     ax.set_xlabel("resistance dial R")
     ax.set_ylabel(r"flywheel decay rate $\lambda$ (1/s)")
     ax.set_title(r"Spin-down calibration: $\lambda(R) = \alpha\,R^p + \beta$",
