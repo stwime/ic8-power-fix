@@ -48,21 +48,12 @@ class CoastdownPoint {
   });
 }
 
-/// Result of fitting λ(R) = α·R^p / (R^p + R_c^p) + β across multiple
-/// [CoastdownPoint]s. The Hill exponent p is held fixed at
-/// [Calibration.defaultPHill]; the fitter promotes from 2-param (α, β) to
-/// 3-param (α, β, R_c) when the data spans enough R to pin the half-max
-/// knee; see [fitBrake]. [fittedRc] tells callers which mode was used so
-/// they can show the right thing in the UI.
+/// Result of fitting λ(R) = α·R^p + β across multiple [CoastdownPoint]s.
+/// The exponent p is held fixed at [Calibration.defaultPower]; the fitter
+/// recovers (α, β) by linear weighted least squares.
 class BrakeFit {
   final double alpha;
   final double beta;
-  /// Half-max knee (dial-units): R at which λ − β reaches α/2. Fitted from
-  /// data when [fittedRc] is true, otherwise echoed back from the input prior.
-  final double rc;
-  /// True when R_c was estimated from the user's coastdowns; false when the
-  /// input range was too narrow and R_c was held at its prior.
-  final bool fittedRc;
   /// Per-sample-count weighted RMS residual (1/s).
   final double rms;
   /// (R, λ_meas, λ_pred) per input point, in input order.
@@ -70,8 +61,6 @@ class BrakeFit {
   const BrakeFit({
     required this.alpha,
     required this.beta,
-    required this.rc,
-    required this.fittedRc,
     required this.rms,
     required this.residuals,
   });
@@ -341,18 +330,32 @@ class CoastdownDetector {
   }
 }
 
-/// Weighted least-squares fit λ(R) = α·u(R) + β with
-/// u(R) = R^p / (R^p + R_c^p), R_c and p both held fixed. Weights combine
-/// √n (sample count) with log(cadHi/cadLo) (dynamic range observed) — a
-/// 125→10 segment carries more information about the decay rate than a
-/// 77→44 one even at the same n.
-({double alpha, double beta, double wrss}) _fit2(
-    List<CoastdownPoint> points, double rc, double p) {
-  final rcp = math.pow(rc, p).toDouble();
+/// Weighted least-squares fit of λ(R) = α·R^p + β with the exponent p
+/// held fixed at [Calibration.defaultPower].
+///
+/// Weights combine √n (sample count) with log(cadHi/cadLo) (dynamic range
+/// observed) — a 125→10 segment carries more information about the decay
+/// rate than a 77→44 one even at the same n.
+///
+/// Requires ≥2 points across ≥2 distinct R values.
+BrakeFit fitBrake(
+  List<CoastdownPoint> points, {
+  double power = Calibration.defaultPower,
+}) {
+  if (points.length < 2) {
+    throw ArgumentError('need ≥2 points, got ${points.length}');
+  }
+  final distinctR = points.map((p) => p.resistance).toSet();
+  if (distinctR.length < 2) {
+    throw ArgumentError('need ≥2 distinct R values, got ${distinctR.length}');
+  }
+
+  // Linear-in-(α, β) WLS at fixed p. Design row is (R^p, 1).
   double sw = 0, su = 0, su2 = 0, slam = 0, sulam = 0;
   for (final pt in points) {
-    final rp = math.pow(pt.resistance, p).toDouble();
-    final u = rp / (rp + rcp);
+    final u = pt.resistance == 0
+        ? 0.0
+        : math.pow(pt.resistance, power).toDouble();
     final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
     final w = wRoot * wRoot;
     sw += w;
@@ -361,35 +364,20 @@ class CoastdownDetector {
     slam += w * pt.lambda;
     sulam += w * u * pt.lambda;
   }
-  // [[su2, su], [su, sw]] [α; β] = [sulam; slam]
+  // Normal equations: [[su2, su], [su, sw]] · [α; β] = [sulam; slam]
   final det = su2 * sw - su * su;
   if (det.abs() < 1e-12) {
     throw StateError('singular fit (degenerate R distribution)');
   }
   final alpha = (sw * sulam - su * slam) / det;
   final beta = (su2 * slam - su * sulam) / det;
-  // Weighted residual sum of squares at this (rc, p).
-  double wrss = 0;
-  for (final pt in points) {
-    final rp = math.pow(pt.resistance, p).toDouble();
-    final u = rp / (rp + rcp);
-    final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
-    final w = wRoot * wRoot;
-    final e = pt.lambda - (alpha * u + beta);
-    wrss += w * e * e;
-  }
-  return (alpha: alpha, beta: beta, wrss: wrss);
-}
 
-BrakeFit _finalize(
-    List<CoastdownPoint> points, double alpha, double beta, double rc, double p,
-    {required bool fittedRc}) {
-  final rcp = math.pow(rc, p).toDouble();
   double sse = 0, wsum = 0;
   final residuals = <({int r, double measured, double predicted})>[];
   for (final pt in points) {
-    final rp = math.pow(pt.resistance, p).toDouble();
-    final u = rp / (rp + rcp);
+    final u = pt.resistance == 0
+        ? 0.0
+        : math.pow(pt.resistance, power).toDouble();
     final pred = alpha * u + beta;
     residuals.add((r: pt.resistance, measured: pt.lambda, predicted: pred));
     final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
@@ -401,104 +389,7 @@ BrakeFit _finalize(
   return BrakeFit(
     alpha: alpha,
     beta: beta,
-    rc: rc,
-    fittedRc: fittedRc,
     rms: math.sqrt(sse / wsum),
     residuals: residuals,
   );
-}
-
-/// Adequacy heuristic: can we identify R_c from this point set, or do we have
-/// to hold it fixed? Pinning the half-max knee needs both a "below-knee"
-/// anchor (R well below the knee) and an "above-knee" anchor (R at or past
-/// the knee). Without both, the curve is approximately linear over the data
-/// range and (α, R_c) trade off freely.
-bool _canFitRc(Set<int> distinctR) {
-  if (distinctR.length < 4) return false;
-  final rs = distinctR.toList()..sort();
-  // Must reach into the curvature region (R ≳ defaultRcDial), and span enough
-  // R that the Hill shape is visible vs a straight line.
-  if (rs.last < 40) return false;
-  if (rs.last - rs.first < 30) return false;
-  return true;
-}
-
-/// Weighted least-squares fit of λ(R) = α·R^p / (R^p + R_c^p) + β.
-///
-/// The Hill exponent [p] is held fixed at [Calibration.defaultPHill] — it
-/// reflects the brake-mechanism geometry, not per-unit calibration variation,
-/// and identifying it requires R coverage we don't expect from a normal
-/// in-app calibration session. When the user's coastdown set spans enough R
-/// to identify the half-max knee (see [_canFitRc]) the fitter estimates
-/// (α, β, R_c); otherwise it holds R_c at [fixedRc] (typically
-/// [Calibration.defaultRcDial], or the user's previously-fitted value) and
-/// only fits (α, β). The result's [BrakeFit.fittedRc] flag tells the caller
-/// which mode was used.
-///
-/// Requires ≥2 points across ≥2 distinct R values.
-BrakeFit fitBrake(
-  List<CoastdownPoint> points, {
-  double fixedRc = Calibration.defaultRcDial,
-  double pHill = Calibration.defaultPHill,
-}) {
-  if (points.length < 2) {
-    throw ArgumentError('need ≥2 points, got ${points.length}');
-  }
-  final distinctR = points.map((p) => p.resistance).toSet();
-  if (distinctR.length < 2) {
-    throw ArgumentError('need ≥2 distinct R values, got ${distinctR.length}');
-  }
-
-  if (!_canFitRc(distinctR)) {
-    final r = _fit2(points, fixedRc, pHill);
-    return _finalize(points, r.alpha, r.beta, fixedRc, pHill,
-        fittedRc: false);
-  }
-
-  // 3-param: R_c is the only nonlinear parameter (p is held fixed). Profile
-  // (α, β) out via the 2-param linear LSQ at each R_c, then minimize wRSS(R_c).
-  // Coarse log-spaced grid bracket → golden-section refine.
-  const lo = Calibration.rcDialMin;
-  const hi = Calibration.rcDialMax;
-  const grid = 41; // ~5% steps over [10, 200]
-  double bestRc = fixedRc;
-  double bestRss = double.infinity;
-  for (int i = 0; i < grid; i++) {
-    final t = i / (grid - 1);
-    final rc = lo * math.pow(hi / lo, t);
-    final r = _fit2(points, rc.toDouble(), pHill);
-    if (r.wrss < bestRss) {
-      bestRss = r.wrss;
-      bestRc = rc.toDouble();
-    }
-  }
-  // Golden-section refine in a log-bracket around bestRc (one grid step each
-  // way), to ~1e-3 relative tolerance on R_c.
-  final logStep = math.log(hi / lo) / (grid - 1);
-  double a = math.max(math.log(lo), math.log(bestRc) - logStep);
-  double b = math.min(math.log(hi), math.log(bestRc) + logStep);
-  const phi = 0.6180339887498949;
-  double c = b - (b - a) * phi;
-  double d = a + (b - a) * phi;
-  double fc = _fit2(points, math.exp(c), pHill).wrss;
-  double fd = _fit2(points, math.exp(d), pHill).wrss;
-  for (int iter = 0; iter < 60; iter++) {
-    if ((b - a) < 1e-3) break;
-    if (fc < fd) {
-      b = d;
-      d = c;
-      fd = fc;
-      c = b - (b - a) * phi;
-      fc = _fit2(points, math.exp(c), pHill).wrss;
-    } else {
-      a = c;
-      c = d;
-      fc = fd;
-      d = a + (b - a) * phi;
-      fd = _fit2(points, math.exp(d), pHill).wrss;
-    }
-  }
-  final rcFit = math.exp((a + b) / 2);
-  final r = _fit2(points, rcFit, pHill);
-  return _finalize(points, r.alpha, r.beta, rcFit, pHill, fittedRc: true);
 }

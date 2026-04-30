@@ -100,36 +100,34 @@ response is nonlinear: the dial moves a permanent magnet toward the
 flywheel, and the eddy-current torque scales with $B^2(d)$ where $B$ is
 field strength and $d$ is the magnet-flywheel gap. Far-field
 $B \propto 1/d^k$ with $k \approx 3\text{–}6$, so $B^2$ is a power-law
-in gap and $\lambda(R)$ follows a Hill form:
+in gap and $\lambda(R)$ follows a power-law form:
 
-$$\lambda(R) = \alpha \cdot \frac{R^p}{R^p + R_c^p} + \beta$$
+$$\lambda(R) = \alpha \cdot R^p + \beta$$
 
-$p$ is the effective power-law exponent and $R_c$ is the half-max knee
-(the dial position where $\lambda - \beta$ reaches $\alpha/2$). Pooled
-fit on 31 coastdowns spanning $R = 1\ldots 80$:
+Fit on per-segment video-derived spindowns (cumulative-angle integration,
+gravity-pendulum subtracted at low $R$ via phase-locked sampling at full
+crank-rev marks):
 
-- $\alpha = 0.207\ \text{s}^{-1}$ — Hill brake amplitude
-- $\beta = 0.034\ \text{s}^{-1}$ — residual drag at $R = 0$
-- $R_c = 38.5$ — dial half-max knee
-- $p = 1.90$ — Hill exponent (held fixed across bikes)
+- $\alpha = 1.020 \times 10^{-3}\ \text{s}^{-1}\,R^{-p}$ — power-law brake amplitude
+- $\beta = 0.0252\ \text{s}^{-1}$ — residual drag at $R = 0$
+- $p = 1.646$ — brake exponent (held fixed across bikes)
 
-The Hill form cuts weighted RSS 24% over the saturating
-$\alpha\,(1 - e^{-R/R_c}) + \beta$ and 27% over linear, with bucket
-residuals flat across all $R$ buckets to within $\pm 0.005\ \text{s}^{-1}$.
-Auto-calibrate fits $\alpha$, $\beta$, and (when the user's coastdowns
-span enough $R$) $R_c$ per-bike; $p$ is held fixed at 1.90 since it
-reflects the brake-mechanism geometry, not per-unit calibration
-variation.
+The power-law form cuts weighted RSS 4× over linear and 4× over the
+saturating $\alpha\,(1 - e^{-R/R_c}) + \beta$. The earlier Hill form
+$\alpha\,R^p/(R^p + R_c^p) + \beta$ fit indistinguishably (same wRMS) but
+with $R_c$ pinning at ~180 — well past the dial's $R \le 89$ range — so
+its 4th parameter ($R_c$) was unidentified and the curve collapsed to a
+power-law in our regime. We dropped it to keep the calibration parsimonious.
+Auto-calibrate fits $\alpha$ and $\beta$ per-bike; $p$ is held fixed at
+1.646 since it reflects the brake-mechanism geometry.
 
 **$I$ from outdoor anchors.** With $\lambda(R)$ known, the only unknown
 is $I$. Matching outdoor 4iiii crank-meter sessions to indoor sessions
-in HR + cadence bins back-solves $I \approx 24.5\ \text{kg}\,\text{m}^2$
+in HR + cadence bins back-solves $I \approx 9.3\ \text{kg}\,\text{m}^2$
 near typical riding cadence. That implies a flywheel-to-crank gear ratio
-of ~9 (with an $\sim 0.29\ \text{kg}\,\text{m}^2$ flywheel), a bit
-higher than the documented 6:1 — likely because the back-solve absorbs
-unmodelled rolling losses and $\omega$-vs-time shape mismatch. The
-in-app **Power scale** slider absorbs leftover offset against an
-external reference.
+of ~5.7 (with an $\sim 0.29\ \text{kg}\,\text{m}^2$ flywheel), in line
+with the documented 6:1 IC8 gearing. The in-app **Power scale** slider
+absorbs leftover offset against an external reference.
 
 ## Reality check: the model decomposes a sprint cleanly
 
@@ -171,7 +169,7 @@ isn't possible regardless of what you pair it to.
 ## Limitations
 
 - **Absolute scale depends on your unit.** The *shape* of the correction
-  ($\text{cad}^2$, Hill $\lambda(R)$) is physics-derived and solid. The
+  ($\text{cad}^2$, power-law $\lambda(R)$) is physics-derived and solid. The
   multiplicative offset depends on your bike's dial calibration and on
   the inertia anchor — Auto-calibrate fits the first; the Power scale
   slider absorbs the second.
@@ -194,8 +192,8 @@ bridge/lib/ble/                  BLE central + peripheral
 bridge/lib/physics/              corrector + coastdown fit (Dart port of
                                  spindown_fit.py — what Auto-calibrate runs)
 analysis/parse_nrf_log.py        nRF Connect log -> CSV (FTMS + CSC joined)
-analysis/spindown_fit.py         CSV of coastdowns -> α, β, R_c, p (Hill fit
-                                 on per-rev CSC event timestamps)
+analysis/fit_lambda_R_v3.py      cleaned coastdowns -> α, β, p (power-law
+                                 fit on video-derived bounds)
 analysis/pin_inertia.py          outdoor 4iiii FIT files -> I_crank
 analysis/correct_power.py        offline reprocessor (Python mirror of the
                                  Dart corrector)

@@ -31,16 +31,14 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _alphaCtrl;
   late final TextEditingController _betaCtrl;
-  late final TextEditingController _rcCtrl;
 
   @override
   void initState() {
     super.initState();
     final cal = widget.calibration;
     _nameCtrl = TextEditingController(text: widget.prefs.proxyName);
-    _alphaCtrl = TextEditingController(text: cal.alpha.toStringAsFixed(4));
+    _alphaCtrl = TextEditingController(text: cal.alpha.toStringAsFixed(6));
     _betaCtrl = TextEditingController(text: cal.beta.toStringAsFixed(4));
-    _rcCtrl = TextEditingController(text: cal.rcDial.toStringAsFixed(1));
     _sampleSub = widget.central.samples.listen((s) {
       if (mounted) setState(() => _last = s);
     });
@@ -52,7 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _nameCtrl.dispose();
     _alphaCtrl.dispose();
     _betaCtrl.dispose();
-    _rcCtrl.dispose();
     super.dispose();
   }
 
@@ -77,9 +74,8 @@ class _SettingsPageState extends State<SettingsPage> {
     await widget.calibration.resetToDefaults();
     if (!mounted) return;
     setState(() {
-      _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(4);
+      _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(6);
       _betaCtrl.text = widget.calibration.beta.toStringAsFixed(4);
-      _rcCtrl.text = widget.calibration.rcDial.toStringAsFixed(1);
     });
     messenger.showSnackBar(const SnackBar(content: Text('Reset to defaults')));
   }
@@ -119,22 +115,6 @@ class _SettingsPageState extends State<SettingsPage> {
     await widget.calibration.setBeta(v);
     if (!mounted) return;
     setState(() {});
-    messenger.showSnackBar(const SnackBar(content: Text('Saved')));
-  }
-
-  Future<void> _saveRcDial() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final v = double.tryParse(_rcCtrl.text);
-    if (v == null) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text('That is not a valid number')));
-      return;
-    }
-    await widget.calibration.setRcDial(v);
-    if (!mounted) return;
-    setState(() {
-      _rcCtrl.text = widget.calibration.rcDial.toStringAsFixed(1);
-    });
     messenger.showSnackBar(const SnackBar(content: Text('Saved')));
   }
 
@@ -233,9 +213,8 @@ class _SettingsPageState extends State<SettingsPage> {
               ));
               if (mounted) {
                 setState(() {
-                  _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(4);
+                  _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(6);
                   _betaCtrl.text = widget.calibration.beta.toStringAsFixed(4);
-                  _rcCtrl.text = widget.calibration.rcDial.toStringAsFixed(1);
                 });
               }
             },
@@ -294,7 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
           controller: _alphaCtrl,
           defaultValue: Calibration.defaultAlpha,
           currentValue: cal.alpha,
-          frac: 4,
+          frac: 6,
           onSave: _saveAlpha,
         ),
         const SizedBox(height: 8),
@@ -305,15 +284,6 @@ class _SettingsPageState extends State<SettingsPage> {
           currentValue: cal.beta,
           frac: 4,
           onSave: _saveBeta,
-        ),
-        const SizedBox(height: 8),
-        _editableNumberRow(
-          label: 'Knee R_c',
-          controller: _rcCtrl,
-          defaultValue: Calibration.defaultRcDial,
-          currentValue: cal.rcDial,
-          frac: 1,
-          onSave: _saveRcDial,
         ),
       ],
     );

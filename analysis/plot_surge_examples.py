@@ -2,10 +2,9 @@
 show up in real recordings.
 
   * spindown_fit.png  — coastdowns at different R values give λ(R), the
-    decay rate of the flywheel. A Hill fit
-    λ(R) = α·R^p / (R^p + R_c^p) + β separates brake from residual drag and
-    captures the dial's nonlinear bite at high R. Same data, same fit as
-    analysis/spindown_fit.py.
+    decay rate of the flywheel. A power-law fit λ(R) = α·R^p + β separates
+    brake from residual drag and captures the dial's nonlinear bite at
+    high R. Same data, same fit as analysis/fit_lambda_R_v3.py.
   * indoor_surge.png  — IC8 BLE log, cadence 8→67 rpm at R=28 (calibration
     grid). The corrected model decomposes power into steady + KE; you can
     see the KE bump while the rider spins the flywheel up, then it collapses
@@ -25,17 +24,16 @@ OUT = ROOT / "docs/figures"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Bridge constants (mirrored in bridge/lib/physics/calibration.dart).
-LAMBDA_ALPHA = 0.207
-LAMBDA_BETA = 0.034
-LAMBDA_RC = 38.5
-LAMBDA_P = 1.90
-I_CRANK = 24.5
+LAMBDA_ALPHA = 0.001020
+LAMBDA_BETA = 0.0252
+LAMBDA_P = 1.646
+I_CRANK = 9.3
 
 
 def lambda_at(R):
     R_pos = np.maximum(R, 0.0)
-    rp = R_pos ** LAMBDA_P
-    return LAMBDA_ALPHA * rp / (rp + LAMBDA_RC ** LAMBDA_P) + LAMBDA_BETA
+    rp = np.where(R_pos > 0, R_pos ** LAMBDA_P, 0.0)
+    return LAMBDA_ALPHA * rp + LAMBDA_BETA
 
 
 def _csc(row):
@@ -169,71 +167,61 @@ def outdoor_surge():
 
 
 def spindown_fit():
-    """Plot per-coastdown λ values against R, with the Hill fit overlaid and
-    the linear fit drawn dashed for comparison. Uses the canonical pooled fit
-    defined in analysis/spindown_fit.py (per-revolution event timestamps)."""
+    """Plot per-coastdown λ values against R, with the power-law fit
+    overlaid and the linear fit drawn dashed for comparison. Uses the
+    canonical fit defined in analysis/fit_lambda_R_v3.py (video-derived
+    bounds, phase-locked at low R, two-term elsewhere)."""
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).parent))
-    from spindown_fit import collect_segments
+    from fit_lambda_R_v3 import collect_lambdas
 
-    results = collect_segments()
-    kept = [r for r in results if r["keep"]]
-    Rs = np.array([r["R"] for r in kept], dtype=float)
-    lams = np.array([r["lam"] for r in kept])
-    ns = np.array([r["n"] for r in kept])
-    c0 = np.array([r["c0"] for r in kept])
-    c1 = np.array([r["c1"] for r in kept])
-    sessions = np.array([r["label"] for r in kept])
-
-    # Same weighting as analysis/spindown_fit.py:main — sqrt(n) · log(c0/c1).
-    w = np.sqrt(ns) * np.log(c0 / c1)
+    rows = collect_lambdas()
+    Rs = np.array([r["R"] for r in rows], dtype=float)
+    lams = np.array([r["lam"] for r in rows])
+    w = np.array([r["weight"] for r in rows])
+    sources = np.array([r["source"] for r in rows])
     W = np.diag(w)
 
-    # Linear comparison line
+    # Linear comparison line.
     A_lin = np.vstack([Rs, np.ones_like(Rs)]).T
     (a_lin, b_lin), *_ = np.linalg.lstsq(W @ A_lin, W @ lams, rcond=None)
 
-    # Hill fit by 2D grid over (R_c, p), profiling (α, β) at each grid point.
-    # Matches the search bounds in analysis/spindown_fit.py.
+    # Power-law fit by 1D grid over p, profiling (α, β) at each grid point.
+    Rs_safe = np.where(Rs == 0, 1.0, Rs)
     best = None
-    for Rc_h in np.linspace(5.0, 120.0, 80):
-        for p in np.linspace(1.0, 8.0, 71):
-            u = Rs**p / (Rs**p + Rc_h**p)
-            A_h = np.vstack([u, np.ones_like(u)]).T
-            sol, *_ = np.linalg.lstsq(W @ A_h, W @ lams, rcond=None)
-            alpha, beta = sol
-            rss = float(np.sum(w**2 * (lams - (alpha * u + beta))**2))
-            if best is None or rss < best[0]:
-                best = (rss, Rc_h, p, alpha, beta)
-    _, Rc, p_h, alpha, beta = best
+    for p in np.linspace(1.30, 2.20, 901):
+        u = np.where(Rs == 0, 0.0, Rs_safe**p)
+        A = np.vstack([u, np.ones_like(u)]).T
+        sol, *_ = np.linalg.lstsq(W @ A, W @ lams, rcond=None)
+        alpha_p, beta_p = sol
+        rss = float(np.sum(w**2 * (lams - (alpha_p * u + beta_p))**2))
+        if best is None or rss < best[0]:
+            best = (rss, p, alpha_p, beta_p)
+    _, p_pow, alpha, beta = best
 
     rline = np.linspace(0, max(Rs.max() + 5, 100), 200)
-    rline_p = np.maximum(rline, 0.0) ** p_h
-    hill_curve = alpha * rline_p / (rline_p + Rc ** p_h) + beta
+    pow_curve = np.where(rline > 0, alpha * rline**p_pow, 0.0) + beta
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    colors = {"apr29": "#ff7f0e", "apr30": "#1f77b4",
-              "super_high_r": "#2ca02c"}
-    labels = {"apr29": "session 1", "apr30": "session 2",
-              "super_high_r": "session 3"}
-    for sess, color in colors.items():
-        m = sessions == sess
-        if not m.any(): continue
-        ax.scatter(Rs[m], lams[m], s=ns[m] * 6 + 20, c=color, alpha=0.85,
+    color_v3 = "#1f77b4"
+    color_v2 = "#ff7f0e"
+    for label, mask, color in [("phase-locked (R≤24)", sources == "v3", color_v3),
+                                ("two-term (R≥33)", sources == "v2", color_v2)]:
+        if not mask.any(): continue
+        ax.scatter(Rs[mask], lams[mask], s=w[mask] * 4 + 20, c=color, alpha=0.85,
                    edgecolor="white", linewidth=1,
-                   label=f"{labels[sess]} (n={m.sum()})")
+                   label=f"{label} (n={mask.sum()})")
     ax.plot(rline, a_lin * rline + b_lin, color="#999", lw=1.4, ls="--",
             label=f"linear fit  λ = {a_lin:.4f}·R + {b_lin:.4f}")
-    ax.plot(rline, hill_curve,
+    ax.plot(rline, pow_curve,
             color="#d62728", lw=2.2,
-            label=f"Hill fit  λ = {alpha:.3f}·R^{p_h:.2f} / "
-                  f"(R^{p_h:.2f} + {Rc:.1f}^{p_h:.2f}) + {beta:.3f}")
+            label=f"power-law fit  λ = {alpha:.5f}·R^{p_pow:.3f} + {beta:.4f}")
     ax.axhline(beta, color="#888", ls=":", lw=1)
     ax.text(rline[-1] * 0.02, beta + 0.005,
             f"residual drag β = {beta:.3f}", color="#555", fontsize=9)
     ax.set_xlabel("resistance dial R")
     ax.set_ylabel(r"flywheel decay rate $\lambda$ (1/s)")
-    ax.set_title(r"Spin-down calibration: $\lambda(R) = \alpha\,R^p / (R^p + R_c^p) + \beta$",
+    ax.set_title(r"Spin-down calibration: $\lambda(R) = \alpha\,R^p + \beta$",
                  fontsize=12, weight="bold")
     ax.legend(loc="upper left", fontsize=9)
     ax.grid(True, alpha=0.3)
