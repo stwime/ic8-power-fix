@@ -34,6 +34,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   bluetooth_low_energy: ^6.1.4
   wakelock_plus: ^1.6.0
+  shared_preferences: ^2.3.0
 
 dev_dependencies:
   flutter_test:

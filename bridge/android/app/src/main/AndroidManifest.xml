@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <application
-        android:label="ic8_bridge"
+        android:label="IC Bridge"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

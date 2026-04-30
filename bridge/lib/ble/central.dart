@@ -5,6 +5,7 @@ import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 
 import 'decode_csc.dart';
 import 'decode_ftms.dart';
+import '../physics/calibration.dart';
 import '../physics/corrector.dart';
 
 const String _kFtmsService = '1826';
@@ -47,9 +48,10 @@ enum BridgeConnState {
 /// Discover, connect, and stream IC8 samples.
 class IC8Central {
   final CentralManager manager;
-  final Corrector corrector = Corrector();
+  final Corrector corrector;
 
-  IC8Central(this.manager) {
+  IC8Central(this.manager, Calibration calibration)
+      : corrector = Corrector(calibration) {
     _connStateSub = manager.connectionStateChanged.listen(_onConnState);
   }
 

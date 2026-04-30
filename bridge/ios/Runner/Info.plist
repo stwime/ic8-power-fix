@@ -5,9 +5,9 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Reads power/cadence from your IC8 and re-broadcasts corrected power to your training app.</string>
+	<string>Reads power and cadence from your indoor bike and re-broadcasts corrected power to your training app.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Acts as a virtual power meter so apps like Rouvy or MyWhoosh can receive corrected IC8 power.</string>
+	<string>Acts as a virtual power meter so apps like Rouvy or MyWhoosh can receive corrected power from your indoor bike.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
@@ -16,7 +16,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Ic8 Bridge</string>
+	<string>IC Bridge</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:math' as math;
+import 'calibration.dart';
 import 'constants.dart';
 
 /// Streaming version of analysis/correct_power.py.
@@ -8,6 +9,12 @@ import 'constants.dart';
 /// rolling state to compute median-filtered R and a 3-sample central difference
 /// for dω/dt, and returns corrected power per sample.
 class Corrector {
+  /// Live calibration. Read each push so a settings change retunes power
+  /// instantly without restarting the BLE pipeline.
+  final Calibration calibration;
+
+  Corrector(this.calibration);
+
   final Queue<int> _rBuf = Queue();
   final Queue<({double t, double omega})> _omegaBuf = Queue();
 
@@ -75,9 +82,9 @@ class Corrector {
       return null;
     }
 
-    final double pSteady = (Constants.aBrake * rSmooth + Constants.bFriction) *
-        Constants.iCrank * omega * omega;
-    final double pKe = Constants.iCrank * omega * omegaDot;
+    final double pSteady = (calibration.aBrake * rSmooth + calibration.bFriction) *
+        calibration.iCrank * omega * omega;
+    final double pKe = calibration.iCrank * omega * omegaDot;
     final double pCorrected = math.max(0.0, pSteady + pKe);
 
     lastSteadyW = pSteady;

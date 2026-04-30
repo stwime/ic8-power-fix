@@ -1,23 +1,30 @@
 import 'package:flutter/material.dart';
 
+import 'physics/calibration.dart';
+import 'prefs.dart';
 import 'ui/home.dart';
 
-void main() {
-  runApp(const App());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final calibration = await Calibration.load();
+  final prefs = await AppPrefs.load();
+  runApp(App(calibration: calibration, prefs: prefs));
 }
 
 class App extends StatelessWidget {
-  const App({super.key});
+  final Calibration calibration;
+  final AppPrefs prefs;
+  const App({super.key, required this.calibration, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'IC8 Bridge',
+      title: 'IC Bridge',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      home: HomePage(calibration: calibration, prefs: prefs),
     );
   }
 }
