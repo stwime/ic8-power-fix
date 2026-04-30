@@ -11,9 +11,9 @@ virtual FTMS power meter your training apps can pair to.
 ## Why use this
 
 - **Physics-derived correction, not a flat scale factor.** The model is
-  eddy-current brake dynamics: `P = λ(R)·I·ω² + I·ω·dω/dt`. It responds
-  correctly to transients — sprints, coastdowns, low-cadence grinding —
-  instead of just shifting every number by a percentage.
+  eddy-current brake dynamics: $P = \lambda(R)\,I\,\omega^2 + I\,\omega\,\frac{d\omega}{dt}$.
+  It responds correctly to transients — sprints, coastdowns, low-cadence
+  grinding — instead of just shifting every number by a percentage.
 - **Calibrates to your specific bike.** Auto-calibrate (Settings →
   Auto-calibrate) fits the brake curve on-device in 5–10 minutes. If you
   have an outdoor power meter, the Power scale slider pins the absolute
@@ -42,14 +42,12 @@ IC8 and apply directly.
 
 The IC8 broadcasts power as a function of cadence and the resistance dial:
 
-```
-P_IC8 ≈ 0.019 · R^0.83 · cad^1.5
-```
+$$P_{\text{IC8}} \approx 0.019 \cdot R^{0.83} \cdot \text{cad}^{1.5}$$
 
 Two issues:
 
 1. **The cadence exponent is wrong.** Real eddy-current physics gives
-   `P ∝ ω²`, not `cad^1.5`.
+   $P \propto \omega^2$, not $\text{cad}^{1.5}$.
 2. **The absolute scale isn't fixed.** Whether the bike reads high, low,
    or on the money depends on the unit, the dial calibration, and the
    operating point. That's why forums are confusing — there's no single
@@ -61,32 +59,26 @@ the bridge re-broadcasts:
 
 ![IC8 vs corrected power curves](docs/figures/power_curves.png)
 
-The gap is largest at low cadence (where `cad^1.5` overshoots `cad²`)
-and at high R. Above cad ≈ 100 the bridge can read slightly higher than
-the bike — see the structural-limit note below.
+The gap is largest at low cadence (where $\text{cad}^{1.5}$ overshoots
+$\text{cad}^2$) and at high $R$. Above cad ≈ 100 the bridge can read
+slightly higher than the bike — see the structural-limit note below.
 
 ## The fix
 
 For an eddy-current brake the steady-state dissipation has a clean form:
 
-```
-P_steady = λ(R) · I · ω²
-```
+$$P_{\text{steady}} = \lambda(R)\,I\,\omega^2$$
 
-`λ(R)` is the per-radian dissipation rate at dial setting `R`, `I` is
-the flywheel's effective rotational inertia at the crank, `ω` is crank
-angular velocity in rad/s. There's also a kinetic-energy term that
-matters during accelerations and decelerations:
+$\lambda(R)$ is the per-radian dissipation rate at dial setting $R$,
+$I$ is the flywheel's effective rotational inertia at the crank, $\omega$
+is crank angular velocity in rad/s. There's also a kinetic-energy term
+that matters during accelerations and decelerations:
 
-```
-P_KE = I · ω · dω/dt
-```
+$$P_{\text{KE}} = I\,\omega\,\frac{d\omega}{dt}$$
 
 Total rider input is the sum:
 
-```
-P_corrected = λ(R) · I · ω²  +  I · ω · dω/dt
-```
+$$P_{\text{corrected}} = \lambda(R)\,I\,\omega^2 \;+\; I\,\omega\,\frac{d\omega}{dt}$$
 
 At steady cadence the second term is zero. During a sprint launch it
 adds the work to spin up the flywheel; during a coastdown it subtracts
@@ -94,64 +86,64 @@ and the total goes to zero (the rider isn't doing work).
 
 ### Where the constants come from
 
-**`λ(R)` from spin-downs.** With no rider input, the flywheel decelerates
-as `ω(t) = ω₀·exp(-λ(R)·t)`. Each coastdown gives one λ at one R, fit on
-the per-revolution CSC event timestamps (1/1024 s precision) so high-R /
-short coastdowns aren't dominated by ~0.5 s of BLE-arrival jitter.
+**$\lambda(R)$ from spin-downs.** With no rider input, the flywheel
+decelerates as $\omega(t) = \omega_0\,e^{-\lambda(R)\,t}$. Each coastdown
+gives one $\lambda$ at one $R$, fit on the per-revolution CSC event
+timestamps (1/1024 s precision) so high-$R$ / short coastdowns aren't
+dominated by ~0.5 s of BLE-arrival jitter.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-The dashed grey line is a linear `λ(R) = a·R + b` — it matches at low to
-mid R but undershoots high R systematically. The brake response is
-nonlinear: the dial moves a permanent magnet toward the flywheel, and
-the eddy-current torque scales with `B²(d)` where `B` is field strength
-and `d` is the magnet-flywheel gap. Far-field `B ∝ 1/d^k` with k ≈ 3–6,
-so `B²` is a power-law in gap and `λ(R)` follows a Hill form:
+The dashed grey line is a linear $\lambda(R) = a\,R + b$ — it matches at
+low to mid $R$ but undershoots high $R$ systematically. The brake
+response is nonlinear: the dial moves a permanent magnet toward the
+flywheel, and the eddy-current torque scales with $B^2(d)$ where $B$ is
+field strength and $d$ is the magnet-flywheel gap. Far-field
+$B \propto 1/d^k$ with $k \approx 3\text{–}6$, so $B^2$ is a power-law
+in gap and $\lambda(R)$ follows a Hill form:
 
-```
-λ(R) = α · R^p / (R^p + R_c^p) + β
-```
+$$\lambda(R) = \alpha \cdot \frac{R^p}{R^p + R_c^p} + \beta$$
 
-`p` is the effective power-law exponent and `R_c` is the half-max knee
-(the dial position where `λ − β` reaches `α/2`). Pooled fit on 31
-coastdowns spanning R = 1…80:
+$p$ is the effective power-law exponent and $R_c$ is the half-max knee
+(the dial position where $\lambda - \beta$ reaches $\alpha/2$). Pooled
+fit on 31 coastdowns spanning $R = 1\ldots 80$:
 
-```
-α   = 0.207 / s    (Hill brake amplitude)
-β   = 0.034 / s    (residual drag at R = 0)
-R_c = 38.5         (dial half-max knee)
-p   = 1.90         (Hill exponent — held fixed across bikes)
-```
+- $\alpha = 0.207\ \text{s}^{-1}$ — Hill brake amplitude
+- $\beta = 0.034\ \text{s}^{-1}$ — residual drag at $R = 0$
+- $R_c = 38.5$ — dial half-max knee
+- $p = 1.90$ — Hill exponent (held fixed across bikes)
 
 The Hill form cuts weighted RSS 24% over the saturating
-`α·(1−exp(−R/R_c))+β` and 27% over linear, with bucket residuals flat
-across all R buckets to within ±0.005 / s. Auto-calibrate fits `α`, `β`,
-and (when the user's coastdowns span enough R) `R_c` per-bike; `p` is
-held fixed at 1.90 since it reflects the brake-mechanism geometry, not
-per-unit calibration variation.
+$\alpha\,(1 - e^{-R/R_c}) + \beta$ and 27% over linear, with bucket
+residuals flat across all $R$ buckets to within $\pm 0.005\ \text{s}^{-1}$.
+Auto-calibrate fits $\alpha$, $\beta$, and (when the user's coastdowns
+span enough $R$) $R_c$ per-bike; $p$ is held fixed at 1.90 since it
+reflects the brake-mechanism geometry, not per-unit calibration
+variation.
 
-**`I` from outdoor anchors.** With λ(R) known, the only unknown is `I`.
-Matching outdoor 4iiii crank-meter sessions to indoor sessions in HR +
-cadence bins back-solves `I ≈ 24.5 kg·m²` near typical riding cadence.
-That implies a flywheel-to-crank gear ratio of ~9 (with an
-~0.29 kg·m² flywheel), a bit higher than the documented 6:1 — likely
-because the back-solve absorbs unmodelled rolling losses and ω-vs-time
-shape mismatch. The in-app **Power scale** slider absorbs leftover
-offset against an external reference.
+**$I$ from outdoor anchors.** With $\lambda(R)$ known, the only unknown
+is $I$. Matching outdoor 4iiii crank-meter sessions to indoor sessions
+in HR + cadence bins back-solves $I \approx 24.5\ \text{kg}\,\text{m}^2$
+near typical riding cadence. That implies a flywheel-to-crank gear ratio
+of ~9 (with an $\sim 0.29\ \text{kg}\,\text{m}^2$ flywheel), a bit
+higher than the documented 6:1 — likely because the back-solve absorbs
+unmodelled rolling losses and $\omega$-vs-time shape mismatch. The
+in-app **Power scale** slider absorbs leftover offset against an
+external reference.
 
 ## Reality check: the model decomposes a sprint cleanly
 
-A BLE-logged spin-up at R = 28 — cadence 0 → 67 rpm in 8 seconds, then
-held steady for 8 more:
+A BLE-logged spin-up at $R = 28$ — cadence 0 → 67 rpm in 8 seconds,
+then held steady for 8 more:
 
 ![Indoor surge-and-hold](docs/figures/indoor_surge.png)
 
-Blue area is the steady term `λ(R)·I·ω²`, red area is the KE term
-`I·ω·dω/dt`. KE adds 50–80 W during the spin-up, then collapses to ≈ 0
-within 1–2 seconds of cadence holding, settling at the steady-state
-dissipation at cad 67. The same shape shows up on a 4iiii crank meter
-during an outdoor acceleration — different sensor, different system,
-same physics.
+Blue area is the steady term $\lambda(R)\,I\,\omega^2$, red area is
+the KE term $I\,\omega\,\frac{d\omega}{dt}$. KE adds 50–80 W during the
+spin-up, then collapses to ≈ 0 within 1–2 seconds of cadence holding,
+settling at the steady-state dissipation at cad 67. The same shape
+shows up on a 4iiii crank meter during an outdoor acceleration —
+different sensor, different system, same physics.
 
 ## What the bridge does
 
@@ -179,7 +171,7 @@ isn't possible regardless of what you pair it to.
 ## Limitations
 
 - **Absolute scale depends on your unit.** The *shape* of the correction
-  (cad², Hill λ(R)) is physics-derived and solid. The
+  ($\text{cad}^2$, Hill $\lambda(R)$) is physics-derived and solid. The
   multiplicative offset depends on your bike's dial calibration and on
   the inertia anchor — Auto-calibrate fits the first; the Power scale
   slider absorbs the second.
@@ -187,11 +179,12 @@ isn't possible regardless of what you pair it to.
   Above the cap, the bridge falls back to CSC-derived cadence if the
   bike exposes CSC; otherwise it clamps and slightly underestimates
   sprint power.
-- **Structural limit at high cadence.** Because `cad² / cad^1.586 ∝
-  cad^0.414`, the correction shrinks as cadence grows. If the firmware
-  overstates power *more* at high cadence on your bike, this model can't
-  fully represent that — a sub-quadratic cadence exponent would be
-  needed, which requires bilateral indoor truth across a cadence sweep.
+- **Structural limit at high cadence.** Because
+  $\text{cad}^2 / \text{cad}^{1.586} \propto \text{cad}^{0.414}$, the
+  correction shrinks as cadence grows. If the firmware overstates power
+  *more* at high cadence on your bike, this model can't fully represent
+  that — a sub-quadratic cadence exponent would be needed, which
+  requires bilateral indoor truth across a cadence sweep.
 
 ## Repository layout
 
