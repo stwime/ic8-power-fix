@@ -27,11 +27,12 @@ from pathlib import Path
 
 import numpy as np
 
-# Spin-down derived (analysis/spindown_fit.py)
-A_BRAKE = 0.00710
-B_FRICTION = 0.0290
-# Inertia anchor (analysis/pin_inertia.py)
-DEFAULT_I_CRANK = 13.5
+# Spin-down derived (analysis/spindown_fit.py).
+# Keep in sync with bridge/lib/physics/calibration.dart defaults.
+A_BRAKE = 0.00573
+B_FRICTION = 0.0359
+# Inertia anchor (analysis/pin_inertia.py).
+DEFAULT_I_CRANK = 12.4
 # Saturation flags
 CAD_CAP = 124.0       # FTMS BLE cap is 125; treat anything ≥124 as suspect
 R_CAP = 100           # hard mechanical cap; brake locked, no useful info

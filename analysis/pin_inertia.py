@@ -6,8 +6,10 @@ Method:
      / early-mid hard, like fit_restricted.py).
   2. Pool indoor IC8 broadcast samples.
   3. For matched cadence + HR bins, take median outdoor and indoor power.
-  4. Back-solve indoor R from the IC8 closed-form  P_b = 0.0148·R^0.79·cad^1.59.
-  5. Apply physics:  P_true = (0.00710·R + 0.0290)·I·ω²,  ω = cad·π/30.
+  4. Back-solve indoor R from the IC8 closed-form  P_b = κ·R^N_R·cad^N_CAD
+     (constants below, fit once from the IC8 broadcast itself).
+  5. Apply physics:  P_true = (A_BRAKE·R + B_FRICTION)·I·ω²,  ω = cad·π/30,
+     using the shipped spin-down fit.
   6. Solve I per bin and take the median across bins.
 
 Why this is a fair anchor: the IC8's closed-form is just a per-bike calibration
@@ -179,7 +181,8 @@ def main():
     print(f"\nimplied gear ratio (flywheel:crank), assuming I_flywheel=0.29: {g:.2f}")
     print(f"  (typical IC8 gearing is reported ~6:1 — this should be in that ballpark)")
 
-    print(f"\n=> use I_crank = {I_wmean:.3f} kg·m² in correct_power.py")
+    print(f"\n=> use I_crank = {I_wmean:.3f} kg·m² as the default in "
+          f"bridge/lib/physics/calibration.dart")
 
 
 if __name__ == "__main__":

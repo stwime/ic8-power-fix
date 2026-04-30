@@ -1,13 +1,25 @@
-# IC8 Power Fix
+# IC Bridge
 
-If you ride a **Schwinn 800IC / IC8 / IC4 / Bowflex C6** indoors and pair it
-to Rouvy, MyWhoosh, Zwift, or Garmin, your power numbers are roughly **15–20%
-high**. This project is a small Flutter bridge that reads the bike's BLE
-output, applies a physics-based correction, and re-broadcasts the corrected
-number as a virtual cycling power meter.
+If you ride one of the indoor bikes listed below and pair it to Rouvy,
+MyWhoosh, Zwift, or Garmin, your power numbers are roughly **15–20% high**.
+IC Bridge is a small Flutter app that reads the bike's BLE output, applies a
+physics-based correction, and re-broadcasts the corrected number as a virtual
+cycling power meter your training apps can pair to.
 
-The same approach works for any mechanical eddy-current brake bike that
-broadcasts resistance over FTMS.
+## Supported models
+
+The calibration was fitted on a Schwinn IC8. The bikes below share the same
+mechanical platform (eddy-current brake, manual resistance dial, FTMS over
+BLE), so the same correction shape applies. The absolute scale may be a few
+percent off on bikes other than the IC8 — see "Calibrate to your bike" in the
+app's Settings to dial it in.
+
+| Model                    | Notes                                |
+|--------------------------|--------------------------------------|
+| **Schwinn IC8 / 800IC**  | Reference platform — calibration fit on this |
+| **Schwinn IC4**          | Same mechanical platform; recalibrate for best accuracy |
+| **Bowflex C6**           | Same hardware as the IC4 under a different brand |
+| Other FTMS indoor bikes  | Will work if they broadcast resistance over FTMS; expect to recalibrate |
 
 ---
 
@@ -163,7 +175,7 @@ measured by a different sensor on a different system.
 
 ```
   ┌──────────────┐         ┌──────────────────────────┐         ┌──────────────┐
-  │   IC8 bike   │   BLE   │       bridge phone       │   BLE   │ training app │
+  │  indoor bike │   BLE   │       bridge phone       │   BLE   │ training app │
   │              ├────────▶│                          ├────────▶│              │
   │  FTMS 0x1826 │ R, cad, │  P = (aR+b)·I·ω²         │  FTMS + │  Rouvy       │
   │              │ power,  │      + I·ω·dω/dt         │  Power  │  MyWhoosh    │
@@ -172,12 +184,12 @@ measured by a different sensor on a different system.
   └──────────────┘         └──────────────────────────┘         └──────────────┘
 ```
 
-The phone running the bridge connects to your IC8 over BLE (it shows up as
+The phone running the bridge connects to your bike over BLE (it shows up as
 "Nautilus,Inc - IC Bike" or similar), reads the FTMS Indoor Bike Data
-characteristic, runs the correction at every sample, and presents itself to
+characteristic, runs the correction on every sample, and presents itself to
 your iPad/Apple TV/computer as a virtual FTMS bike + cycling power meter
-named **"IC Bike (corrected)"**. Your training app pairs to the bridge
-instead of the bike.
+named **"IC Bike (corrected)"** by default (configurable in Settings). Your
+training app pairs to the bridge instead of the bike.
 
 The bridge ships with:
 
@@ -210,10 +222,18 @@ possible regardless of what you pair it to.
 ```
 bridge/                          Flutter app — the bridge itself
 bridge/lib/ble/                  BLE central + peripheral
-bridge/lib/physics/              the corrector (mirrors correct_power.py)
-analysis/spindown_fit.py         produces a, b
-analysis/correct_power.py        applies the correction to a parsed BLE log
-analysis/plot_surge_examples.py  generates the figures above
+bridge/lib/physics/              the corrector + coastdown fit (Dart port of
+                                 spindown_fit.py — what the in-app
+                                 Auto-calibrate runs on the phone)
+analysis/parse_nrf_log.py        nRF Connect log -> CSV (FTMS + CSC joined)
+analysis/spindown_fit.py         CSV of coastdowns -> a, b
+analysis/pin_inertia.py          outdoor 4iiii FIT files -> I_crank
+analysis/correct_power.py        offline reprocessor (applies the correction
+                                 to a parsed BLE log; Python mirror of the
+                                 Dart corrector)
+analysis/plot_surge_examples.py  generates the README figures
+analysis/decode_ftms.py          FTMS Indoor Bike Data (0x2AD2) decoder
+analysis/decode_csc.py           CSC Measurement (0x2A5B) decoder
 data/calibration/                BLE logs used to fit a, b
 data/                            outdoor FIT files (anchors / validation)
 docs/figures/                    README plots
@@ -227,19 +247,39 @@ flutter pub get
 flutter run                      # connect a phone first
 ```
 
-In the app: tap the shield icon to authorize BLE permissions, then **Scan**,
-tap your bike when it appears, and the bridge starts. From your training
-app on a separate device, pair to **"IC Bike (corrected)"** as a power
-meter (and FTMS bike if your app supports it). Done.
+In the app: if a Bluetooth icon appears in the top bar, tap it to grant
+permissions; then tap **Find bike**, tap your bike when it shows up, and the
+bridge starts. From your training app on a separate device, pair to
+**"IC Bike (corrected)"** (or whatever name you set under Settings → Bike
+name in training apps) as a power meter and as an FTMS bike. Done.
 
-## Redoing the calibration
+## Calibrating to your bike
 
-1. Capture a BLE log of a coastdown ride with nRF Connect (~5 spin-downs
-   from cad ≥ 80 at different R values).
-2. `python3 analysis/parse_nrf_log.py raw.txt > spin_downs.csv`
+The app ships with the IC8 calibration as the default. If you have a
+different model (or just want to dial in the scale on your specific bike),
+two routes:
+
+**In-app (recommended).** Open Settings → **Auto-calibrate**. Follow the
+steps: pedal up, stop, repeat at 3+ different resistance levels. The app
+fits the brake/friction curve and saves it. Takes 5–10 minutes. To match
+absolute scale against an external power meter (e.g. a crank meter on an
+outdoor session at matched effort), use the Power scale slider on the same
+screen.
+
+**Offline (developers).** The Python pipeline in `analysis/` is what shipped
+the defaults. Steps 1–3 are also what the in-app Auto-calibrate does (the
+fit is ported to Dart in `bridge/lib/physics/coastdown.dart`); use the
+Python path when you want to capture raw BLE logs and rerun the fit on a
+desktop.
+1. Capture a BLE log with nRF Connect (~5 spin-downs from cad ≥ 80 at
+   different R values).
+2. `python3 analysis/parse_nrf_log.py raw.txt > data/calibration/spin_downs.csv`
 3. `python3 analysis/spindown_fit.py` → emits `λ(R) = a·R + b`
-4. Pin `I` against one outdoor session at matched intensity.
-5. Update `bridge/lib/physics/constants.dart` with the new values.
+4. `python3 analysis/pin_inertia.py` against one outdoor session at matched
+   intensity → emits `I_crank`.
+5. Update the defaults in `bridge/lib/physics/calibration.dart` (and
+   mirror them in `analysis/correct_power.py` if you use it for offline
+   reprocessing).
 
-Tests live in `bridge/test/corrector_test.dart` — `flutter test` should
-pass after any constants change.
+Tests live in `bridge/test/` — `flutter test` should pass after any default
+changes.
