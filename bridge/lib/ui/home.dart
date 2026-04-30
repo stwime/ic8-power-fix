@@ -81,19 +81,21 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _authorize() async {
-    // The OS only shows the permission prompt once. If we're already in the
-    // unauthorized state the user denied it earlier and authorize() is a
-    // no-op — the only way out is the system Settings page.
-    if (_centralBleState == BluetoothLowEnergyState.unauthorized ||
-        _peripheralBleState == BluetoothLowEnergyState.unauthorized) {
+  /// Open the right Settings page (or trigger first-launch authorize) for
+  /// whichever BLE state the bridge is currently stuck in.
+  Future<void> _openBleSettings() async {
+    bool either(BluetoothLowEnergyState s) =>
+        _centralBleState == s || _peripheralBleState == s;
+    if (either(BluetoothLowEnergyState.unauthorized)) {
       await AppSettings.openAppSettings();
-      return;
+    } else if (either(BluetoothLowEnergyState.poweredOff)) {
+      await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
+    } else if (either(BluetoothLowEnergyState.unknown)) {
+      // First run: authorize() actually triggers the OS prompt.
+      setState(() => _status = 'Asking for Bluetooth permission…');
+      await CentralManager().authorize();
+      await PeripheralManager().authorize();
     }
-    setState(() => _status = 'Asking for Bluetooth permission…');
-    await CentralManager().authorize();
-    await PeripheralManager().authorize();
-    setState(() => _status = 'Permission granted');
   }
 
   Future<void> _startScan() async {
@@ -165,19 +167,41 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  /// True when either the central or peripheral side is in a state that an
-  /// authorize() call can move forward (unknown = first run, unauthorized =
-  /// denied/not yet asked). poweredOn/poweredOff/unsupported are resolved.
-  bool get _needsAuthorize {
-    bool needs(BluetoothLowEnergyState s) =>
-        s == BluetoothLowEnergyState.unknown ||
-        s == BluetoothLowEnergyState.unauthorized;
-    return needs(_centralBleState) || needs(_peripheralBleState);
+  /// Inspect the central/peripheral BLE states and surface what's wrong, if
+  /// anything. Returns null when both sides are powered on. `fixable` is
+  /// false only for `unsupported` — every other broken state has a Settings
+  /// page or first-run prompt that can resolve it.
+  ({String message, bool fixable})? get _bleProblem {
+    bool either(BluetoothLowEnergyState s) =>
+        _centralBleState == s || _peripheralBleState == s;
+    if (either(BluetoothLowEnergyState.unsupported)) {
+      return (
+        message: 'Bluetooth Low Energy is not supported on this device.',
+        fixable: false,
+      );
+    }
+    if (either(BluetoothLowEnergyState.unauthorized)) {
+      return (
+        message: 'Bluetooth permission is off for IC Bridge. '
+            'Open Settings → IC Bridge and turn Bluetooth on.',
+        fixable: true,
+      );
+    }
+    if (either(BluetoothLowEnergyState.poweredOff)) {
+      return (
+        message: 'Bluetooth is turned off on this phone. '
+            'Open Settings → Bluetooth and turn it on.',
+        fixable: true,
+      );
+    }
+    if (either(BluetoothLowEnergyState.unknown)) {
+      return (
+        message: 'Bluetooth is not authorized yet — tap to allow it.',
+        fixable: true,
+      );
+    }
+    return null;
   }
-
-  bool get _bleReady =>
-      _centralBleState == BluetoothLowEnergyState.poweredOn &&
-      _peripheralBleState == BluetoothLowEnergyState.poweredOn;
 
   @override
   Widget build(BuildContext context) {
@@ -189,13 +213,21 @@ class _HomePageState extends State<HomePage> {
     final r = ftms?.resistance ?? 0;
     final hr = ftms?.heartRate ?? 0;
 
+    final ble = _bleProblem;
+    final canStartScan = _connected == null && !_scanning;
+    // When BLE isn't ready, repurpose "Find bike" as the fix-it button so the
+    // user has a primary CTA that actually does something useful — see the
+    // banner directly above for the explanation of what it'll do.
+    final findOnPressed = canStartScan
+        ? (ble == null
+            ? _startScan
+            : (ble.fixable ? _openBleSettings : null))
+        : null;
+    final findLabel =
+        ble != null && ble.fixable ? 'Open Settings' : 'Find bike';
+
     return Scaffold(
       appBar: AppBar(title: const Text('IC Bridge'), actions: [
-        if (_needsAuthorize) IconButton(
-          onPressed: _authorize,
-          icon: const Icon(Icons.bluetooth_disabled),
-          tooltip: 'Grant Bluetooth permission',
-        ),
         IconButton(
           onPressed: () async {
             await Navigator.of(context).push(MaterialPageRoute(
@@ -216,11 +248,11 @@ class _HomePageState extends State<HomePage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(_status),
           const SizedBox(height: 8),
+          if (ble != null) _bleBanner(ble.message),
           Row(children: [
             ElevatedButton(
-                onPressed: (_connected == null && !_scanning && _bleReady)
-                    ? _startScan : null,
-                child: const Text('Find bike')),
+                onPressed: findOnPressed,
+                child: Text(findLabel)),
             const SizedBox(width: 8),
             ElevatedButton(
                 onPressed: _scanning ? _stopScan : null,
@@ -256,6 +288,23 @@ class _HomePageState extends State<HomePage> {
           ),
         ]),
       ),
+    );
+  }
+
+  Widget _bleBanner(String message) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade100,
+        border: Border.all(color: Colors.amber.shade400),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.bluetooth_disabled, color: Colors.amber.shade900),
+        const SizedBox(width: 12),
+        Expanded(child: Text(message)),
+      ]),
     );
   }
 
