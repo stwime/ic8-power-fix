@@ -170,6 +170,36 @@ void main() {
       expect(emitted, isEmpty);
     });
 
+    test('leadingTrim drops the first sample by default for long-enough runs',
+        () {
+      final emitted = <CoastdownPoint>[];
+      final det = CoastdownDetector(emitted.add);
+      // 10 valid samples then cadence rises (forces finalize).
+      for (final s in _synth(r: 30, lambda: 0.07, cad0: 110, nSamples: 10)) {
+        det.push(s);
+      }
+      det.push(_s(11, 30, 120));
+      expect(emitted, hasLength(1));
+      // Default leadingTrim=1: 10 captured samples → 9 used in the fit.
+      expect(emitted.first.n, 9);
+      // First sample (cad=110) is trimmed; cadHi reflects sample 1, not 0.
+      expect(emitted.first.cadHi,
+          closeTo(110 * math.exp(-0.07), 1e-6));
+    });
+
+    test('leadingTrim is capped to keep at least minSamples in the fit', () {
+      final emitted = <CoastdownPoint>[];
+      // leadingTrim=3 but a 4-sample run would be trimmed to 1 — that violates
+      // minSamples=4, so the cap forces zero trimming.
+      final det = CoastdownDetector(emitted.add, leadingTrim: 3);
+      for (final s in _synth(r: 30, lambda: 0.07, cad0: 110, nSamples: 4)) {
+        det.push(s);
+      }
+      det.push(_s(5, 30, 0));
+      expect(emitted, hasLength(1));
+      expect(emitted.first.n, 4); // no trim applied
+    });
+
     test('rejects fewer than two distinct R values', () {
       final pts = [
         const CoastdownPoint(resistance: 20, lambda: 0.1, r2: 1.0, n: 5,

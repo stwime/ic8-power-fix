@@ -3,17 +3,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Tunable physics constants — split from [Constants] so they can be edited at
 /// runtime via the settings screen and persisted across app launches.
 ///
-/// Defaults come from analysis/spindown_fit.py on the CSC-based coastdown set
-/// (R=1..45, RMS 0.016/s) plus an outdoor anchor for I_crank.
+/// Defaults come from analysis/spindown_fit.py on the pooled CSC-based coastdown
+/// set (20 clean spindowns from two sessions, R=1..38, RMS 0.015/s) plus an
+/// outdoor anchor for I_crank.
 class Calibration {
-  static const double defaultABrake = 0.00573;     // 1/(s · R-unit)
-  static const double defaultBFriction = 0.0359;   // 1/s
-  static const double defaultICrank = 12.4;        // kg·m² (effective, at crank)
+  static const double defaultABrake = 0.00590;     // 1/(s · R-unit)
+  static const double defaultBFriction = 0.0362;   // 1/s
+  static const double defaultICrank = 14.0;        // kg·m² (effective, at crank)
 
-  /// Bounds for the I_crank slider. Wide enough to cover plausible re-pinning
-  /// without letting a stray tap drive power off into nonsense territory.
-  static const double iCrankMin = 8.0;
-  static const double iCrankMax = 18.0;
+  /// Bounds for the I_crank slider. Wide enough to cover any plausible
+  /// indoor-cycle bike, from a light entry-level FTMS bike with a small
+  /// flywheel up through heavy commercial spin bikes.
+  static const double iCrankMin = 2.0;
+  static const double iCrankMax = 40.0;
 
   static const String _keyABrake = 'cal.aBrake';
   static const String _keyBFriction = 'cal.bFriction';

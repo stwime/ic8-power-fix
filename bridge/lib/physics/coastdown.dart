@@ -124,24 +124,40 @@ List<List<CoastdownSample>> findCleanCoastdowns(
   return (lambda: -slope, r2: r2);
 }
 
+/// Drop the first [leadingTrim] samples to suppress the transient where the
+/// rider may still be touching the pedals (legs add drag), capped so the
+/// remaining segment retains at least [minSamples] samples.
+List<CoastdownSample> _trimLeading(
+  List<CoastdownSample> seg, {
+  required int leadingTrim,
+  required int minSamples,
+}) {
+  final canDrop = math.max(0, math.min(leadingTrim, seg.length - minSamples));
+  return canDrop == 0 ? seg : seg.sublist(canDrop);
+}
+
 /// Apply [findCleanCoastdowns] then [fitDecay] to each segment, dropping any
-/// fit with r² below [minR2].
+/// fit with r² below [minR2]. The leading [leadingTrim] samples of each run
+/// are discarded before fitting (capped to keep ≥ minSamples=4 in the fit) —
+/// they are dominated by the rider-feet-still-touching transient.
 List<CoastdownPoint> extractCoastdownPoints(
   List<CoastdownSample> rows, {
   double minR2 = 0.95,
+  int leadingTrim = 1,
 }) {
   final out = <CoastdownPoint>[];
   for (final seg in findCleanCoastdowns(rows)) {
-    final fit = fitDecay(seg);
+    final samples = _trimLeading(seg, leadingTrim: leadingTrim, minSamples: 4);
+    final fit = fitDecay(samples);
     if (fit.r2 < minR2) continue;
     out.add(CoastdownPoint(
-      resistance: seg.first.resistance,
+      resistance: samples.first.resistance,
       lambda: fit.lambda,
       r2: fit.r2,
-      n: seg.length,
-      cadHi: seg.first.cadenceRpmCsc,
-      cadLo: seg.last.cadenceRpmCsc,
-      durationS: seg.last.timestampS - seg.first.timestampS,
+      n: samples.length,
+      cadHi: samples.first.cadenceRpmCsc,
+      cadLo: samples.last.cadenceRpmCsc,
+      durationS: samples.last.timestampS - samples.first.timestampS,
     ));
   }
   return out;
@@ -157,6 +173,7 @@ class CoastdownDetector {
   final int rJitterMax;
   final double flatTol;
   final double minR2;
+  final int leadingTrim;
 
   final List<CoastdownSample> _run = [];
 
@@ -167,6 +184,7 @@ class CoastdownDetector {
     this.rJitterMax = 1,
     this.flatTol = 0.05,
     this.minR2 = 0.95,
+    this.leadingTrim = 1,
   });
 
   /// Number of samples in the run currently being recorded (0 if idle).
@@ -208,16 +226,18 @@ class CoastdownDetector {
 
   void _finalize() {
     if (_run.length >= minSamples) {
-      final fit = fitDecay(_run);
+      final samples = _trimLeading(
+          _run, leadingTrim: leadingTrim, minSamples: minSamples);
+      final fit = fitDecay(samples);
       if (fit.r2 >= minR2) {
         onPoint(CoastdownPoint(
-          resistance: _run.first.resistance,
+          resistance: samples.first.resistance,
           lambda: fit.lambda,
           r2: fit.r2,
-          n: _run.length,
-          cadHi: _run.first.cadenceRpmCsc,
-          cadLo: _run.last.cadenceRpmCsc,
-          durationS: _run.last.timestampS - _run.first.timestampS,
+          n: samples.length,
+          cadHi: samples.first.cadenceRpmCsc,
+          cadLo: samples.last.cadenceRpmCsc,
+          durationS: samples.last.timestampS - samples.first.timestampS,
         ));
       }
     }

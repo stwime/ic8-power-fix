@@ -26,7 +26,8 @@ class _HomePageState extends State<HomePage> {
   final List<({Peripheral peripheral, String name, int rssi})> _found = [];
   Peripheral? _connected;
   IC8Sample? _last;
-  String _status = 'idle';
+  String _status = 'Ready';
+  _StatusTone _tone = _StatusTone.ready;
   bool _scanning = false;
 
   StreamSubscription? _scanSub;
@@ -68,14 +69,19 @@ class _HomePageState extends State<HomePage> {
         switch (cs) {
           case BridgeConnState.idle:
             _status = 'Ready';
+            _tone = _StatusTone.ready;
           case BridgeConnState.connecting:
             _status = 'Connecting…';
+            _tone = _StatusTone.working;
           case BridgeConnState.connected:
             _status = 'Connected — sending power to your training app';
+            _tone = _StatusTone.connected;
           case BridgeConnState.reconnecting:
             _status = 'Connection lost — trying to reconnect…';
+            _tone = _StatusTone.warning;
           case BridgeConnState.disconnected:
             _status = 'Stopped';
+            _tone = _StatusTone.ready;
         }
       });
     });
@@ -92,14 +98,22 @@ class _HomePageState extends State<HomePage> {
       await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
     } else if (either(BluetoothLowEnergyState.unknown)) {
       // First run: authorize() actually triggers the OS prompt.
-      setState(() => _status = 'Asking for Bluetooth permission…');
+      setState(() {
+        _status = 'Asking for Bluetooth permission…';
+        _tone = _StatusTone.working;
+      });
       await CentralManager().authorize();
       await PeripheralManager().authorize();
     }
   }
 
   Future<void> _startScan() async {
-    setState(() { _found.clear(); _status = 'Searching for your bike…'; _scanning = true; });
+    setState(() {
+      _found.clear();
+      _status = 'Searching for your bike…';
+      _tone = _StatusTone.working;
+      _scanning = true;
+    });
     _scanSub?.cancel();
     _scanSub = _central.scanForBikes().listen((d) {
       // BLE often emits multiple advertisement events per device — the first
@@ -125,7 +139,11 @@ class _HomePageState extends State<HomePage> {
     await _scanSub?.cancel();
     _scanSub = null;
     await _central.stopScan();
-    setState(() { _status = 'Ready'; _scanning = false; });
+    setState(() {
+      _status = 'Ready';
+      _tone = _StatusTone.ready;
+      _scanning = false;
+    });
   }
 
   Future<void> _connect(Peripheral p) async {
@@ -144,7 +162,10 @@ class _HomePageState extends State<HomePage> {
       await _peripheral.start(name: widget.prefs.proxyName);
     } catch (e) {
       await WakelockPlus.disable();
-      setState(() => _status = 'Could not connect: $e');
+      setState(() {
+        _status = 'Could not connect: $e';
+        _tone = _StatusTone.warning;
+      });
     }
   }
 
@@ -246,8 +267,8 @@ class _HomePageState extends State<HomePage> {
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(_status),
-          const SizedBox(height: 8),
+          _StatusPill(label: _status, tone: _tone),
+          const SizedBox(height: 12),
           if (ble != null) _bleBanner(ble.message),
           Row(children: [
             ElevatedButton(
@@ -320,6 +341,70 @@ class _HomePageState extends State<HomePage> {
         const Spacer(),
         Text(value, style: const TextStyle(fontSize: 24)),
       ]),
+    );
+  }
+}
+
+enum _StatusTone { ready, working, connected, warning }
+
+class _StatusPill extends StatelessWidget {
+  final String label;
+  final _StatusTone tone;
+  const _StatusPill({required this.label, required this.tone});
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color dot, Color bg, Color fg) = switch (tone) {
+      _StatusTone.ready =>
+        (Colors.grey.shade500, Colors.grey.shade100, Colors.grey.shade800),
+      _StatusTone.working =>
+        (Colors.blue.shade500, Colors.blue.shade50, Colors.blue.shade900),
+      _StatusTone.connected =>
+        (Colors.green.shade600, Colors.green.shade50, Colors.green.shade900),
+      _StatusTone.warning =>
+        (Colors.amber.shade700, Colors.amber.shade50, Colors.amber.shade900),
+    };
+    final spinning = tone == _StatusTone.working;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (spinning)
+          SizedBox(
+            width: 12, height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 2, valueColor: AlwaysStoppedAnimation(dot)),
+          )
+        else
+          _Dot(color: dot),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: fg,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  final Color color;
+  const _Dot({required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 10, height: 10,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }

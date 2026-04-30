@@ -21,14 +21,19 @@ import numpy as np
 import fitdecode
 
 ROOT = Path(__file__).parent.parent
-OUT_PATHS = ["data/Lunch_Ride.fit", "data/Lunch_Ride-2.fit",
-             "data/Lunch_Ride_still_too_much_snow.fit"]
-IND_PATHS = ["data/ROUVY_Güímar_Tenerife.fit",
-             "data/ROUVY_IRONMAN_70_3_Sunshine_Coast_1st_loop_.fit"]
+OUT_PATHS = ["data/outdoor/Lunch_Ride.fit",
+             "data/outdoor/Lunch_Ride-2.fit",
+             "data/outdoor/Lunch_Ride_still_too_much_snow.fit",
+             "data/outdoor/Lunch_Ride_harder_effort.fit",
+             "data/outdoor/3_nations_loop.fit"]
+IND_PATHS = ["data/IC bike/ROUVY_Güímar_Tenerife.fit",
+             "data/IC bike/ROUVY_IRONMAN_70_3_Sunshine_Coast_1st_loop_.fit",
+             "data/IC bike/ROUVY_Cumbre_del_Sol_Spain.fit",
+             "data/IC bike/MyWhoosh_Capital_Circuit.fit"]
 
 # Spin-down derived brake/residual drag:
-A_BRAKE = 0.00573     # 1/(s · R-unit)
-B_FRICTION = 0.0359   # 1/s — residual drag, not Coulomb friction
+A_BRAKE = 0.00590     # 1/(s · R-unit)
+B_FRICTION = 0.0362   # 1/s — residual drag, not Coulomb friction
 # IC8 closed-form fit (from earlier calibration analysis):
 KAPPA = 0.0148
 N_R = 0.79

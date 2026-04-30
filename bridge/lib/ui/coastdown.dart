@@ -141,10 +141,14 @@ class _CoastdownPageState extends State<CoastdownPage> {
               'down each time. This usually takes 5–10 minutes.\n\n'
               '1. Set the resistance dial to a low number (try 5).\n'
               '2. Pedal until your cadence is at least 70 rpm.\n'
-              '3. Stop pedaling and keep your hands off the dial.\n'
-              '4. Wait for the app to capture the measurement.\n'
+              '3. Quickly lift both feet off the pedals at the same time so '
+              'they spin freely — a slow or one-foot-at-a-time release adds '
+              'drag and ruins the measurement. Keep your hands off the dial.\n'
+              '4. Wait for the pedals to stop spinning completely — the '
+              'measurement is not finished until they do.\n'
               '5. Change the resistance and repeat — at least 3 different '
-              'resistance levels in total.'),
+              'resistance levels in total. More levels (and more coastdowns '
+              'per level) give a tighter fit.'),
         ]),
       ),
     );
@@ -168,14 +172,16 @@ class _CoastdownPageState extends State<CoastdownPage> {
 
     if (running > 0) {
       return _statusBanner(Colors.green.shade100,
-          'Measuring at resistance ${_detector.currentRunR} — keep your '
-          'hands off the dial. Cadence: '
+          'Measuring at resistance ${_detector.currentRunR} — wait for the '
+          'pedals to stop completely. Keep your hands off the dial. '
+          'Cadence: '
           '${_detector.currentRunCadence?.toStringAsFixed(0)} rpm.');
     }
     if (cad >= 70) {
       return _statusBanner(Colors.grey.shade200,
-          'Now stop pedaling to start a measurement. '
-          'Cadence: ${cad.toStringAsFixed(0)} rpm at resistance $r.');
+          'Lift both feet off the pedals at the same time to start a '
+          'measurement. Cadence: ${cad.toStringAsFixed(0)} rpm at '
+          'resistance $r.');
     }
     return _statusBanner(Colors.grey.shade200,
         'Pedal up to at least 70 rpm to begin. '

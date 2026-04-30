@@ -8,18 +8,19 @@ cycling power meter your training apps can pair to.
 
 ## Supported models
 
-The calibration was fitted on a Schwinn IC8. The bikes below share the same
-mechanical platform (eddy-current brake, manual resistance dial, FTMS over
-BLE), so the same correction shape applies. The absolute scale may be a few
-percent off on bikes other than the IC8 — see "Calibrate to your bike" in the
-app's Settings to dial it in.
+The correction *shape* (eddy-current brake → `(a·R + b)·I·ω²`) applies to any
+indoor bike with a manual resistance dial and FTMS over BLE. The *constants*
+were fitted on a Schwinn IC8 and ship as the default. **If you're not on an
+IC8, run Auto-calibrate (Settings → Auto-calibrate) before your first ride** —
+different flywheels and brake hardware mean the IC8 numbers will be off by
+more than just a trim.
 
-| Model                    | Notes                                |
-|--------------------------|--------------------------------------|
-| **Schwinn IC8 / 800IC**  | Reference platform — calibration fit on this |
-| **Schwinn IC4**          | Same mechanical platform; recalibrate for best accuracy |
-| **Bowflex C6**           | Same hardware as the IC4 under a different brand |
-| Other FTMS indoor bikes  | Will work if they broadcast resistance over FTMS; expect to recalibrate |
+| Model                    | Status                                            |
+|--------------------------|---------------------------------------------------|
+| **Schwinn IC8 / 800IC**  | Reference platform — ships calibrated, ready to use |
+| **Schwinn IC4**          | Different flywheel from IC8 — run Auto-calibrate first |
+| **Bowflex C6 / C7**      | Same hardware as the IC4 under a different brand — run Auto-calibrate first |
+| Other FTMS indoor bikes  | Should work if they broadcast resistance over FTMS — run Auto-calibrate first, then verify scale against an outdoor power meter if you have one |
 
 ---
 
@@ -50,8 +51,11 @@ training app sees from the bike; solid lines are what the bridge re-broadcasts:
 
 The gap is largest at low cadence (where the IC8's `cad^1.5` overshoots
 real `cad²` physics) and at high R (where the absolute scale is most off).
-At a typical hard zone of R ≈ 40 / cad ≈ 90, the bike reads ~348 W and the
-bridge says ~292 W.
+At a typical hard zone of R ≈ 40 / cad ≈ 90, the bike reads ~343 W and the
+bridge says ~330 W. At lower cadence the gap widens — at R ≈ 40 / cad ≈ 60,
+IC8 reads ~163 W and the bridge ~135 W. (Above cad ≈ 100, `cad²` outpaces
+`cad^1.5` and the bridge can read slightly higher than IC8 — see the
+"structural limitation" note below.)
 
 ## The fix: physics-based correction
 
@@ -92,11 +96,22 @@ dial-independent term — independent of `I`:
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-Fifteen clean coastdowns spanning R = 1, 4, 11, 15, 23, 31, 37, 38, 45.
-The line fit gives **a = 0.00573 / (s·R-unit)** and **b = 0.0359 / s** with
-τ at R=0 of about 28 s. Above R ≈ 45 the rider can't reach 125 rpm against
-the brake, so coastdowns are too short (3–6 s) to fit a clean exponential —
-but the linear extrapolation is consistent with pedal-feel up to R=100.
+Twenty clean coastdowns from two structured sessions, spanning
+R = 1, 4, 5, 11, 14, 15, 17, 23, 24, 25, 31, 32, 37, 38. The pooled
+line fit gives **a = 0.00590 / (s·R-unit)** and **b = 0.0362 / s** with
+τ at R=0 of about 28 s. Above R ≈ 45 the rider can't reach 125 rpm
+against the brake, so coastdowns are too short (3–6 s) to fit a clean
+exponential — but the linear extrapolation is consistent with pedal-feel
+up to R=100.
+
+The two sessions agree on `b` to within 1% (0.0363 vs 0.0360) but the
+slope `a` differs by ~11% (0.00633 vs 0.00572). That difference is not
+statistically significant — t ≈ 1.4σ given each session's slope SE — and
+mostly reflects regression leverage: the smaller session has 6 points
+clustered mid-R, so its slope is weakly identified. Subtle effects like
+mild residual rider input during "spindowns", R-dial mechanical backlash,
+and modest brake-temperature variation could each contribute a few
+percent on top. The pooled fit averages them out.
 
 **`b` is residual drag, not classical friction.** Calling `b` "friction"
 is a stretch. The dial only goes down to R=1, so we never measure the
@@ -115,25 +130,75 @@ How the brake/residual split varies with the dial:
 | R   | λ total (1/s) | τ = 1/λ (s) | brake share | residual share |
 |-----|---------------|-------------|-------------|----------------|
 |  1  | 0.042         | 24          | 14%         | 86%            |
-| 10  | 0.093         | 11          | 62%         | 38%            |
-| 30  | 0.208         | 4.8         | 83%         | 17%            |
-| 50  | 0.323         | 3.1         | 89%         | 11%            |
-| 80  | 0.494         | 2.0         | 93%         |  7%            |
+| 10  | 0.095         | 11          | 62%         | 38%            |
+| 30  | 0.213         | 4.7         | 83%         | 17%            |
+| 50  | 0.331         | 3.0         | 89%         | 11%            |
+| 80  | 0.508         | 2.0         | 93%         |  7%            |
 
 Crossover is near R ≈ 6. Above R ≈ 10 the dial-modulated term dominates;
 near R = 1 the bike is almost free-spinning and the residual drag is what
 you feel.
 
-**`I` from one outdoor anchor.** With λ(R) known, the only remaining
-unknown is `I`. We pin it from a single matched-effort outdoor reference
-(4iiii crank meter on a snow ride, matched HR + cadence bins): `I = 12.4
-kg·m²` (effective at the crank) preserves the originally measured ~18% NP
-gap with the IC8 broadcast. This is the weakest link in the pipeline —
-it's a single anchor, and the per-cadence-bin estimates spread from ~10
-(high cad) to ~18 (low cad), which suggests the steady-state model's `cad²`
-isn't a perfect description (real eddy-current physics may have a
-sub-quadratic correction at high speed). I=12.4 is a reasonable single
-compromise; expect a few percent error at the cadence extremes.
+**`I` from outdoor anchors.** With λ(R) known, the only remaining unknown
+is `I`. We pin it against outdoor 4iiii crank-meter sessions in HR + cadence
+bins, back-solving R from the IC8 broadcast and equating physical input:
+
+```
+P_outdoor(HR, cad) = (a·R_back + b) · I · ω²   →   I = P_out / [(a·R+b)·ω²]
+```
+
+**Pool**: a handful of outdoor 4iiii rides (~11k truth samples) matched
+against indoor IC8 sessions on the same bike (~12k broadcast samples).
+Per-cadence-bin median `I` (raw 4iiii):
+
+| cad bin | I_est (kg·m²) |
+|---------|---------------|
+| 55–60   | 19.3          |
+| 60–65   | 17.4          |
+| 65–70   | 14.7          |
+| 70–75   | 12.6          |
+| 75–80   | 12.0          |
+| 80–85   | 11.4          |
+| 85–90   | 10.6          |
+
+Two reasons to trust these numbers cautiously rather than literally:
+
+1. **Outdoor truth can be biased low.** A single-sided crank meter
+   (4iiii on one crank arm) under-counts bilateral output by an amount
+   that depends on left-right balance. Cold, fatigued, or low-cadence
+   grinding outdoor segments also produce less mechanical power per
+   unit HR than fresh indoor efforts at the same HR. Both effects push
+   `I_est` down by an estimated ~10–15%, multiplicatively across all bins.
+2. **The cadence slope persists.** Even after bias correction, `I_est`
+   slopes with cadence — high at low cad, low at high cad. R_back stays
+   near 30 across all bins, so this isn't an R-confound; it's likely
+   either a matching artifact (outdoor low-cad bins are usually climbs
+   at a different drag regime than indoor flats) or a real sub-quadratic
+   correction at high cadence that the `cad²` model can't express. The
+   spindown data itself fits log-linear cleanly at cad 30–70, but the
+   indoor zone spans cad 75–95 — extrapolation territory.
+
+**Sanity check from physics alone.** Schwinn IC8 flywheel is reported at
+~18 kg, with mass concentrated at the rim (designed for inertia). For a
+ring-loaded flywheel `I_flywheel ≈ m·r² ≈ 0.4–0.5 kg·m²`. With a typical
+~6:1 belt drive, `I_crank = I_flywheel · g² ≈ 14–18 kg·m²`. A perfect
+solid-disc approximation gives `I_flywheel ≈ ½·m·r² ≈ 0.29` and
+`I_crank ≈ 10–14`. So **I in the 10–18 range is consistent with the
+hardware**, and `I = 14` sits in the middle.
+
+**Default**: `I = 14.0 kg·m²`. It's the bias-corrected center of the
+per-bin estimates near the rider's typical cadence (70–80 rpm), and
+matches a roughly rim-loaded flywheel with ~6:1 gearing. Expect a few
+percent error at the cadence extremes — the in-app **Power scale**
+slider absorbs the leftover offset against an external reference.
+
+**Known structural limitation.** Because `cad² / cad^1.586 ∝ cad^0.414`,
+the bridge correction shrinks as cadence grows: most aggressive at low
+cad, near zero (or crossing over) at high cad. If the IC8 firmware in
+fact overstates power *more* at high cadence, the `cad²` model can't
+represent that — a sub-quadratic exponent (β < 1.586) would be needed.
+Resolving this requires bilateral indoor truth across a cadence sweep,
+which the current dataset doesn't include.
 
 ## Reality checks
 
@@ -151,18 +216,19 @@ re-broadcast. The dashed line is the IC8's own broadcast.
 - **During the spin-up:** KE adds 50–80 W on top of the steady term while
   the rider is accelerating the flywheel.
 - **Once cadence holds:** KE collapses to ≈ 0 within 1–2 seconds, and the
-  corrected power settles at ≈ 105 W — the new steady-state dissipation
+  corrected power settles at ≈ 135 W — the new steady-state dissipation
   at cad 67.
-- **The IC8 broadcast** (dashed) holds at ~160 W — about 50% above
+- **The IC8 broadcast** (dashed) holds at ~160 W — about 18% above
   corrected at this low-cadence, mid-R operating point. The gap shrinks
-  toward higher cadence (see `power_curves.png` above) but is largest
-  exactly where the IC8's `cad^1.5` formula overshoots most.
+  toward higher cadence (see `power_curves.png` above) and inverts above
+  cad ≈ 100, exactly because the IC8's `cad^1.5` formula grows slower
+  than `cad²`.
 
 ### Outdoor: a 4iiii crank meter shows the same shape
 
 The same physics governs an outdoor bike — bike + rider mass is the
 "flywheel," air drag and rolling resistance are the "brake." A short
-surge from a snow ride:
+acceleration from an outdoor ride:
 
 ![Outdoor surge-and-hold](docs/figures/outdoor_surge.png)
 
@@ -255,31 +321,16 @@ name in training apps) as a power meter and as an FTMS bike. Done.
 
 ## Calibrating to your bike
 
-The app ships with the IC8 calibration as the default. If you have a
-different model (or just want to dial in the scale on your specific bike),
-two routes:
+The app ships with the IC8 calibration as the default. Open Settings →
+**Auto-calibrate** to fit the brake/friction curve to your own bike — the
+app walks you through it on-device, takes 5–10 minutes, and saves the
+result. If you also have an external power meter (e.g. a crank meter from
+a matched outdoor effort), use the **Power scale** slider on the same
+screen to dial in the absolute scale.
 
-**In-app (recommended).** Open Settings → **Auto-calibrate**. Follow the
-steps: pedal up, stop, repeat at 3+ different resistance levels. The app
-fits the brake/friction curve and saves it. Takes 5–10 minutes. To match
-absolute scale against an external power meter (e.g. a crank meter on an
-outdoor session at matched effort), use the Power scale slider on the same
-screen.
-
-**Offline (developers).** The Python pipeline in `analysis/` is what shipped
-the defaults. Steps 1–3 are also what the in-app Auto-calibrate does (the
-fit is ported to Dart in `bridge/lib/physics/coastdown.dart`); use the
-Python path when you want to capture raw BLE logs and rerun the fit on a
-desktop.
-1. Capture a BLE log with nRF Connect (~5 spin-downs from cad ≥ 80 at
-   different R values).
-2. `python3 analysis/parse_nrf_log.py raw.txt > data/calibration/spin_downs.csv`
-3. `python3 analysis/spindown_fit.py` → emits `λ(R) = a·R + b`
-4. `python3 analysis/pin_inertia.py` against one outdoor session at matched
-   intensity → emits `I_crank`.
-5. Update the defaults in `bridge/lib/physics/calibration.dart` (and
-   mirror them in `analysis/correct_power.py` if you use it for offline
-   reprocessing).
+The Python pipeline in `analysis/` is what shipped the defaults and mirrors
+what Auto-calibrate runs on the phone. It's there for developers who want
+to rerun the fit on a desktop against raw BLE logs.
 
 Tests live in `bridge/test/` — `flutter test` should pass after any default
 changes.

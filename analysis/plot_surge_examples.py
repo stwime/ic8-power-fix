@@ -23,9 +23,9 @@ OUT = ROOT / "docs/figures"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Bridge constants (mirrored in bridge/lib/physics/constants.dart).
-A_BRAKE = 0.00573
-B_FRICTION = 0.0359
-I_CRANK = 12.4
+A_BRAKE = 0.00590
+B_FRICTION = 0.0362
+I_CRANK = 14.0
 
 
 def _csc(row):
@@ -98,7 +98,7 @@ def indoor_surge():
 
 def outdoor_surge():
     rows = []
-    with fitdecode.FitReader(str(ROOT / "data/Lunch_Ride_still_too_much_snow.fit")) as fit:
+    with fitdecode.FitReader(str(ROOT / "data/outdoor/Lunch_Ride_still_too_much_snow.fit")) as fit:
         for f in fit:
             if not isinstance(f, fitdecode.FitDataMessage) or f.name != "record":
                 continue
@@ -159,60 +159,18 @@ def outdoor_surge():
 
 
 def spindown_fit():
-    """Replicate analysis/spindown_fit.py and plot the per-coastdown λ values
-    against R, with the linear fit overlaid."""
-    # Inline copy of the relevant logic so this script is self-contained.
-    rows = list(csv.DictReader(
-        open(ROOT / "data/calibration/spin_downs.csv")))
+    """Plot per-coastdown λ values against R, with the linear fit overlaid.
+    Uses the canonical pooled fit defined in analysis/spindown_fit.py."""
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).parent))
+    from spindown_fit import collect_segments
 
-    def find_clean_coastdowns(rows, min_cad_start=70, min_samples=4,
-                              r_jitter_max=1, flat_tol=0.05):
-        segs = []
-        i = 0
-        while i < len(rows) - min_samples:
-            c0 = _csc(rows[i])
-            if c0 is None or c0 < min_cad_start:
-                i += 1; continue
-            R0 = int(rows[i]["resistance"])
-            j = i
-            while j + 1 < len(rows):
-                c_next = _csc(rows[j + 1])
-                R_next = int(rows[j + 1]["resistance"])
-                c_curr = _csc(rows[j])
-                if (c_next is not None and c_curr is not None
-                        and c_next < c_curr + flat_tol
-                        and abs(R_next - R0) <= r_jitter_max):
-                    j += 1
-                else:
-                    break
-            if j - i + 1 >= min_samples:
-                segs.append((rows[i:j + 1], R0))
-            i = j + 1 if j > i else i + 1
-        return segs
-
-    segs = find_clean_coastdowns(rows)
-    Rs, lams, ns = [], [], []
-    for seg, R in segs:
-        t0 = float(seg[0]["timestamp_s"])
-        # User-flagged bad run: first R=11 spindown, rider brushed a pedal.
-        if R == 11 and abs(t0 - 271.4) < 1.0:
-            continue
-        t = np.array([float(r["timestamp_s"]) for r in seg])
-        c = np.array([_csc(r) for r in seg], dtype=float)
-        y = np.log(c)
-        sl, _ = np.polyfit(t, y, 1)
-        lam = -sl
-        pred = sl * t + np.polyfit(t, y, 1)[1]
-        ss_res = np.sum((y - (sl * t + np.polyfit(t, y, 1)[1])) ** 2)
-        ss_tot = max(np.sum((y - y.mean()) ** 2), 1e-12)
-        r2 = 1 - ss_res / ss_tot
-        if r2 < 0.95:
-            continue
-        Rs.append(R); lams.append(lam); ns.append(len(seg))
-
-    Rs = np.array(Rs, dtype=float)
-    lams = np.array(lams)
-    ns = np.array(ns)
+    results = collect_segments()
+    keep = [r for r in results if r["keep"]]
+    Rs = np.array([r["R"] for r in keep], dtype=float)
+    lams = np.array([r["lam"] for r in keep])
+    ns = np.array([r["n"] for r in keep])
+    sessions = np.array([r["label"] for r in keep])
 
     W = np.diag(np.sqrt(ns))
     Amat = np.vstack([Rs, np.ones_like(Rs)]).T
@@ -220,10 +178,16 @@ def spindown_fit():
     rline = np.linspace(0, max(Rs.max(), 60), 100)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(Rs, lams, s=ns * 8, c="#1f77b4", alpha=0.75,
-               edgecolor="white", linewidth=1, label=f"coastdowns (n={len(Rs)})")
+    colors = {"apr29": "#ff7f0e", "apr30": "#1f77b4"}
+    labels = {"apr29": "session 1", "apr30": "session 2"}
+    for sess, color in colors.items():
+        m = sessions == sess
+        if not m.any(): continue
+        ax.scatter(Rs[m], lams[m], s=ns[m] * 8, c=color, alpha=0.8,
+                   edgecolor="white", linewidth=1,
+                   label=f"{labels[sess]} (n={m.sum()})")
     ax.plot(rline, a * rline + b, color="#d62728", lw=2,
-            label=f"λ(R) = {a:.5f}·R + {b:.4f}")
+            label=f"pooled fit  λ(R) = {a:.5f}·R + {b:.4f}")
     ax.axhline(b, color="#888", ls=":", lw=1)
     ax.text(rline[-1] * 0.02, b + 0.005, f"residual-drag floor b = {b:.3f}",
             color="#555", fontsize=9)
