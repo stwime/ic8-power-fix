@@ -37,7 +37,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     final cal = widget.calibration;
     _nameCtrl = TextEditingController(text: widget.prefs.proxyName);
-    _alphaCtrl = TextEditingController(text: cal.alpha.toStringAsFixed(6));
+    _alphaCtrl = TextEditingController(text: cal.alpha.toStringAsFixed(4));
     _betaCtrl = TextEditingController(text: cal.beta.toStringAsFixed(4));
     _sampleSub = widget.central.samples.listen((s) {
       if (mounted) setState(() => _last = s);
@@ -74,7 +74,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await widget.calibration.resetToDefaults();
     if (!mounted) return;
     setState(() {
-      _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(6);
+      _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(4);
       _betaCtrl.text = widget.calibration.beta.toStringAsFixed(4);
     });
     messenger.showSnackBar(const SnackBar(content: Text('Reset to defaults')));
@@ -213,7 +213,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ));
               if (mounted) {
                 setState(() {
-                  _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(6);
+                  _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(4);
                   _betaCtrl.text = widget.calibration.beta.toStringAsFixed(4);
                 });
               }
@@ -273,7 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
           controller: _alphaCtrl,
           defaultValue: Calibration.defaultAlpha,
           currentValue: cal.alpha,
-          frac: 6,
+          frac: 4,
           onSave: _saveAlpha,
         ),
         const SizedBox(height: 8),

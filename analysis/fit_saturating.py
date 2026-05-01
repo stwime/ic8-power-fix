@@ -100,7 +100,6 @@ ROOT = Path(__file__).resolve().parent.parent
 BLE_SOURCES = [
     ROOT / "data/calibration/spin_downs_apr29.csv",
     ROOT / "data/calibration/spin_downs_apr30.csv",
-    ROOT / "data/calibration/spin_downs_super_high_r.csv",
 ]
 OUT_DIR = ROOT / "data/calibration/saturating_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

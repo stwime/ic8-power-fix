@@ -2,9 +2,11 @@
 show up in real recordings.
 
   * spindown_fit.png  — coastdowns at different R values give λ(R), the
-    decay rate of the flywheel. A power-law fit λ(R) = α·R^p + β separates
-    brake from residual drag and captures the dial's nonlinear bite at
-    high R. Same data, same fit as analysis/fit_lambda_R_v3.py.
+    decay rate of the flywheel. The Hill saturating fit
+    λ(R) = β + α·R^p / (R^p + R_c^p) captures both the steep transition
+    around R≈55 and the high-R asymptote. Data is the curated video
+    spindowns from data/calibration/all_spindowns.csv (analysis/
+    fit_hill.py).
   * indoor_surge.png  — IC8 BLE log, cadence 8→67 rpm at R=28 (calibration
     grid). The corrected model decomposes power into steady + KE; you can
     see the KE bump while the rider spins the flywheel up, then it collapses
@@ -13,8 +15,10 @@ show up in real recordings.
     the same bump+settle shape directly during a speed surge, validating
     that the indoor model is reproducing real-world transient physics.
 """
+from collections import defaultdict
 from pathlib import Path
 import csv
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 import fitdecode
@@ -24,16 +28,19 @@ OUT = ROOT / "docs/figures"
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Bridge constants (mirrored in bridge/lib/physics/calibration.dart).
-LAMBDA_ALPHA = 0.000932
-LAMBDA_BETA = 0.0355
-LAMBDA_P = 1.33
-I_CRANK = 22.9
+LAMBDA_ALPHA = 2.3623   # saturation amplitude (1/s)
+LAMBDA_BETA = 0.0396    # residual drag at R=0 (1/s)
+LAMBDA_RC = 54.58       # half-saturation dial (dimensionless)
+LAMBDA_P = 3.41         # transition sharpness (dimensionless)
+I_CRANK = 9.14
 
 
 def lambda_at(R):
     R_pos = np.maximum(R, 0.0)
     rp = np.where(R_pos > 0, R_pos ** LAMBDA_P, 0.0)
-    return LAMBDA_ALPHA * rp + LAMBDA_BETA
+    rcp = LAMBDA_RC ** LAMBDA_P
+    u = np.where(R_pos > 0, rp / (rp + rcp), 0.0)
+    return LAMBDA_BETA + LAMBDA_ALPHA * u
 
 
 def _csc(row):
@@ -167,51 +174,79 @@ def outdoor_surge():
 
 
 def spindown_fit():
-    """Plot per-coastdown λ values against R, plus the trajectory-based
-    (α, β, p) fit (analysis/fit_saturating.py) overlaid. The dots come
-    from the per-segment exponential fit (analysis/fit_lambda_R_v3.py
-    style) — useful as context, but each one is biased high at high R
-    because that segment only spans low ω. The shipped (α, β, p) come
-    from joint trajectory fitting that side-steps that bias; the red
-    curve below is what the bridge actually uses, and it deliberately
-    sits below the high-R dots because those dots over-state λ."""
-    import sys as _sys
-    _sys.path.insert(0, str(Path(__file__).parent))
-    from fit_lambda_R_v3 import collect_lambdas
+    """Plot per-segment λ̂ from the curated video spindowns, with the
+    shipped Hill curve overlaid. Source: data/calibration/all_spindowns.csv
+    (produced by analysis/aggregate_spindowns.py from the hand-curated
+    bounds in spindown_bounds.json; fit by analysis/fit_hill.py).
+    Per-segment λ̂ is the slope of ln(ω) vs t for each segment.
+    """
+    csv_path = ROOT / "data/calibration/all_spindowns.csv"
+    by_id = defaultdict(lambda: {"t": [], "omega": []})
+    with csv_path.open() as f:
+        for row in csv.DictReader(f):
+            sid = int(row["id"])
+            s = by_id[sid]
+            s["R"] = int(row["R"])
+            s["source"] = row["source"]
+            s["t"].append(float(row["t_s"]))
+            s["omega"].append(float(row["omega_rad_s"]))
 
-    rows = collect_lambdas()
-    Rs = np.array([r["R"] for r in rows], dtype=float)
-    lams = np.array([r["lam"] for r in rows])
-    w = np.array([r["weight"] for r in rows])
-    sources = np.array([r["source"] for r in rows])
+    Rs, lams, sigmas = [], [], []
+    for sid in sorted(by_id):
+        s = by_id[sid]
+        if not s["source"].startswith("video"):
+            continue  # video-only fit
+        t = np.asarray(s["t"]); om = np.asarray(s["omega"])
+        if len(t) < 4 or (om <= 0).any():
+            continue
+        dt = t - t.mean()
+        dy = np.log(om) - np.log(om).mean()
+        S_tt = float((dt * dt).sum())
+        if S_tt < 1e-9:
+            continue
+        slope = float((dt * dy).sum()) / S_tt
+        lam = -slope
+        if lam <= 0:
+            continue
+        resid = dy - slope * dt
+        sigma_y2 = float((resid * resid).sum()) / max(len(t) - 2, 1)
+        sigma = max(math.sqrt(max(sigma_y2 / S_tt, 0.0)), 0.005)
+        Rs.append(s["R"]); lams.append(lam); sigmas.append(sigma)
 
-    rline = np.linspace(0, max(Rs.max() + 5, 100), 200)
-    pow_curve = np.where(rline > 0,
-                         LAMBDA_ALPHA * rline**LAMBDA_P, 0.0) + LAMBDA_BETA
+    Rs = np.array(Rs, dtype=float)
+    lams = np.array(lams)
+    sigmas = np.array(sigmas)
+
+    rline = np.linspace(0, max(Rs.max() + 5, 100), 400)
+    rcp = LAMBDA_RC ** LAMBDA_P
+    rp = np.where(rline > 0, rline ** LAMBDA_P, 0.0)
+    hill_curve = LAMBDA_BETA + LAMBDA_ALPHA * np.where(
+        rline > 0, rp / (rp + rcp), 0.0)
+    asymptote = LAMBDA_BETA + LAMBDA_ALPHA
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    color_v3 = "#1f77b4"
-    color_v2 = "#ff7f0e"
-    for label, mask, color in [("phase-locked (R≤24)", sources == "v3", color_v3),
-                                ("two-term (R≥33)", sources == "v2", color_v2)]:
-        if not mask.any(): continue
-        ax.scatter(Rs[mask], lams[mask], s=w[mask] * 4 + 20, c=color, alpha=0.85,
-                   edgecolor="white", linewidth=1,
-                   label=f"per-segment λ — {label} (n={mask.sum()})")
-    ax.plot(rline, pow_curve,
-            color="#d62728", lw=2.2,
-            label=f"shipped fit  λ = {LAMBDA_ALPHA:.5f}·R^{LAMBDA_P:.2f} "
-                  f"+ {LAMBDA_BETA:.4f}")
+    ax.errorbar(Rs, lams, yerr=sigmas, fmt="o", ms=5, color="#1f77b4",
+                ecolor="#1f77b4", elinewidth=0.8, capsize=2, alpha=0.85,
+                label=f"per-segment λ̂ (video, n={len(Rs)})")
+    ax.plot(rline, hill_curve, color="#d62728", lw=2.2,
+            label=(f"shipped Hill fit  λ = {LAMBDA_BETA:.4f} + "
+                   f"{LAMBDA_ALPHA:.2f}·R^{LAMBDA_P:.2f}/"
+                   f"(R^{LAMBDA_P:.2f} + {LAMBDA_RC:.0f}^{LAMBDA_P:.2f})"))
+    ax.axhline(asymptote, color="#888", ls=":", lw=1)
+    ax.text(rline[-1] * 0.55, asymptote + 0.04,
+            f"asymptote α + β = {asymptote:.2f}", color="#555", fontsize=9)
     ax.axhline(LAMBDA_BETA, color="#888", ls=":", lw=1)
-    ax.text(rline[-1] * 0.02, LAMBDA_BETA + 0.01,
+    ax.text(rline[-1] * 0.02, LAMBDA_BETA + 0.04,
             f"residual drag β = {LAMBDA_BETA:.3f}", color="#555", fontsize=9)
     ax.set_xlabel("resistance dial R")
     ax.set_ylabel(r"flywheel decay rate $\lambda$ (1/s)")
-    ax.set_title(r"Spin-down calibration: $\lambda(R) = \alpha\,R^p + \beta$",
-                 fontsize=12, weight="bold")
+    ax.set_title(
+        r"Spin-down calibration: $\lambda(R) = \beta + \alpha\,R^p / (R^p + R_c^p)$",
+        fontsize=12, weight="bold")
     ax.legend(loc="upper left", fontsize=9)
     ax.grid(True, alpha=0.3)
     ax.set_xlim(0, rline[-1])
+    ax.set_ylim(bottom=0)
     fig.tight_layout()
     fig.savefig(OUT / "spindown_fit.png", dpi=140)
     print(f"wrote {OUT / 'spindown_fit.png'}")

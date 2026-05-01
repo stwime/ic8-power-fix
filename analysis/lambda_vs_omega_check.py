@@ -17,7 +17,6 @@ group by R bin, and look for systematic ω-dependence.
 Sources scanned:
   * data/calibration/spin_downs_apr29.csv     (CSC per-rev, R ≤ 74)
   * data/calibration/spin_downs_apr30.csv     (CSC per-rev, R ≤ 80)
-  * data/calibration/spin_downs_super_high_r.csv (CSC per-rev, R = 80)
   * data/calibration/crank_video.csv          (video-derived, up to R = 89)
 
 For BLE/CSC sources we use per-rev (Δt) → ω samples (1/1024 s timing).
@@ -47,7 +46,6 @@ ROOT = Path(__file__).resolve().parent.parent
 BLE_SOURCES = [
     ROOT / "data/calibration/spin_downs_apr29.csv",
     ROOT / "data/calibration/spin_downs_apr30.csv",
-    ROOT / "data/calibration/spin_downs_super_high_r.csv",
 ]
 OUT_DIR = ROOT / "data/calibration/lambda_vs_omega"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

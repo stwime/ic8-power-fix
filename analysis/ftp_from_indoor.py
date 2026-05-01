@@ -4,8 +4,8 @@ Pipeline:
   1. Load (timestamp, cadence, broadcast_power) from each IC8 indoor session.
   2. Back-solve resistance R from broadcast power using the closed-form
      P_b = κ·R^N_R·cad^N_CAD (constants from earlier IC8 fit).
-  3. Compute corrected power: P = λ(R)·I·ω² + I·ω·dω/dt with the new
-     power-law λ(R) = α·R^p + β.
+  3. Compute corrected power: P = λ(R)·I·ω² + I·ω·dω/dt with the
+     saturating Hill form λ(R) = β + α·R^p / (R^p + R_c^p).
   4. Best rolling N-min averages → FTP estimate (0.95 × best-20-min, or
      best-60-min directly when sessions are long enough).
 
@@ -24,10 +24,11 @@ IND_PATHS = [
     "data/IC bike/MyWhoosh_Capital_Circuit.fit",
 ]
 
-# Power-law λ(R) — must match calibration.dart and correct_power.py.
-LAMBDA_ALPHA = 0.000932
-LAMBDA_BETA = 0.0355
-LAMBDA_P = 1.33
+# Hill λ(R) — must match calibration.dart and correct_power.py.
+LAMBDA_ALPHA = 2.3623
+LAMBDA_BETA = 0.0396
+LAMBDA_RC = 54.58
+LAMBDA_P = 3.41
 # IC8 closed-form back-solve: P_b = κ·R^N_R·cad^N_CAD
 KAPPA = 0.0148
 N_R = 0.79
@@ -100,7 +101,9 @@ def correct(rows, i_crank):
 
     R_pos = np.maximum(R, 0.0)
     rp = np.where(R_pos > 0, R_pos**LAMBDA_P, 0.0)
-    lam = LAMBDA_ALPHA * rp + LAMBDA_BETA
+    rcp = LAMBDA_RC**LAMBDA_P
+    u = np.where(R_pos > 0, rp / (rp + rcp), 0.0)
+    lam = LAMBDA_BETA + LAMBDA_ALPHA * u
     p_steady = lam * i_crank * omega**2
     p_ke = i_crank * omega * om_dot
     p_corr = np.maximum(p_steady + p_ke, 0.0)

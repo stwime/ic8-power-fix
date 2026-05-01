@@ -20,7 +20,6 @@ the BLE/CSC fits run out of revs.
 Sources:
   * data/calibration/spin_downs_apr29.csv  (BLE/CSC per-rev, R ≤ 74)
   * data/calibration/spin_downs_apr30.csv  (BLE/CSC per-rev, R ≤ 80)
-  * data/calibration/spin_downs_super_high_r.csv (BLE/CSC, R = 80)
   * data/calibration/crank_video.csv       (video phase-locked, R 33-89)
 """
 from __future__ import annotations
@@ -46,7 +45,6 @@ ROOT = Path(__file__).resolve().parent.parent
 BLE_SOURCES = [
     ROOT / "data/calibration/spin_downs_apr29.csv",
     ROOT / "data/calibration/spin_downs_apr30.csv",
-    ROOT / "data/calibration/spin_downs_super_high_r.csv",
 ]
 OUT_DIR = ROOT / "data/calibration/lambda_vs_omega"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

@@ -9,7 +9,8 @@ Method:
   4. Back-solve indoor R from the IC8 closed-form  P_b = κ·R^N_R·cad^N_CAD
      (constants below, fit once from the IC8 broadcast itself).
   5. Apply physics:  P_true = λ(R)·I·ω²,  ω = cad·π/30,
-     λ(R) = α·R^p + β,  using the shipped spin-down fit.
+     λ(R) = β + α·R^p / (R^p + R_c^p),  using the shipped Hill spin-down
+     fit (analysis/fit_hill.py).
   6. Solve I per bin and take the median across bins.
 
 Why this is a fair anchor: the IC8's closed-form is just a per-bike calibration
@@ -31,11 +32,12 @@ IND_PATHS = ["data/IC bike/ROUVY_Güímar_Tenerife.fit",
              "data/IC bike/ROUVY_Cumbre_del_Sol_Spain.fit",
              "data/IC bike/MyWhoosh_Capital_Circuit.fit"]
 
-# Spin-down derived power-law fit (analysis/fit_saturating.py — trajectory-
-# based; supersedes the per-segment-λ aggregation in fit_lambda_R_v3.py).
-LAMBDA_ALPHA = 0.000932  # power-law brake amplitude (1/s · R^-p)
-LAMBDA_BETA = 0.0355     # residual drag at R=0 (1/s)
-LAMBDA_P = 1.33          # brake exponent (dimensionless)
+# Hill λ(R) fit (analysis/fit_hill.py on the curated video spindown set).
+# Keep in sync with bridge/lib/physics/calibration.dart and correct_power.py.
+LAMBDA_ALPHA = 2.3623   # saturation amplitude (1/s)
+LAMBDA_BETA = 0.0396    # residual drag at R=0 (1/s)
+LAMBDA_RC = 54.58       # half-saturation dial (dimensionless)
+LAMBDA_P = 3.41         # transition sharpness (dimensionless)
 # IC8 closed-form fit (from earlier calibration analysis):
 KAPPA = 0.0148
 N_R = 0.79
@@ -159,8 +161,11 @@ def main():
         cad_c = c + 2.5
         R = back_solve_R(med_i, cad_c)
         omega = cad_c * np.pi / 30.0
-        rp = max(R, 0.0) ** LAMBDA_P if R > 0 else 0.0
-        lam_R = LAMBDA_ALPHA * rp + LAMBDA_BETA
+        R_pos = max(R, 0.0)
+        rp = R_pos ** LAMBDA_P if R_pos > 0 else 0.0
+        rcp = LAMBDA_RC ** LAMBDA_P
+        u = rp / (rp + rcp) if R_pos > 0 else 0.0
+        lam_R = LAMBDA_BETA + LAMBDA_ALPHA * u
         phys_per_I = lam_R * omega ** 2
         I_est = med_o / phys_per_I
         weight = 2.0 / (1.0 / m_o.sum() + 1.0 / m_i.sum())

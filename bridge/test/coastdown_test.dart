@@ -140,18 +140,26 @@ void main() {
   });
 
   group('fitBrake', () {
-    test('recovers (α, β) from synthetic power-law decays', () {
-      // 5 distinct R values; λ generated from λ(R) = α·R^p + β with the
-      // fixed power exponent. The fitter is linear-in-(α, β) at fixed p so
-      // recovery should be near machine precision.
-      const alpha = 0.0011;
+    test('recovers (α, β) from synthetic Hill decays', () {
+      // 5 distinct R values; λ generated from the Hill form
+      //   λ(R) = β + α · R^p / (R^p + R_c^p)
+      // with shape parameters held at the defaults. The fitter is
+      // linear-in-(α, β) at fixed (p, R_c) so recovery is near machine
+      // precision.
+      const alpha = 2.0;
       const beta = 0.045;
       const p = Calibration.defaultPower;
+      const rc = Calibration.defaultRcDial;
+      final rcp = math.pow(rc, p).toDouble();
+      double hillLambda(int r) {
+        if (r == 0) return beta;
+        final rp = math.pow(r, p).toDouble();
+        return beta + alpha * rp / (rp + rcp);
+      }
       final allRows = <CoastdownSample>[];
       for (final r in [8, 18, 30, 55, 80]) {
-        final lam = alpha * math.pow(r, p).toDouble() + beta;
         final seg = _synth(
-            r: r, lambda: lam, cad0: 110, nSamples: 8,
+            r: r, lambda: hillLambda(r), cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
       }
@@ -164,18 +172,22 @@ void main() {
     });
 
     test('handles R=0 (residual-drag baseline) without exploding', () {
-      // R=0 contributes the β baseline: λ = β. The R^p term is 0 there, so
-      // the design matrix row is (0, 1) — fine for the linear LSQ.
-      const alpha = 0.0011;
+      // R=0 contributes the β baseline: λ = β. The Hill term is 0 there
+      // (R^p / (R^p + R_c^p) = 0), so the design row is (0, 1).
+      const alpha = 2.0;
       const beta = 0.045;
       const p = Calibration.defaultPower;
+      const rc = Calibration.defaultRcDial;
+      final rcp = math.pow(rc, p).toDouble();
+      double hillLambda(int r) {
+        if (r == 0) return beta;
+        final rp = math.pow(r, p).toDouble();
+        return beta + alpha * rp / (rp + rcp);
+      }
       final allRows = <CoastdownSample>[];
       for (final r in [0, 10, 30, 60]) {
-        final lam = (r == 0)
-            ? beta
-            : alpha * math.pow(r, p).toDouble() + beta;
         final seg = _synth(
-            r: r, lambda: lam, cad0: 110, nSamples: 8,
+            r: r, lambda: hillLambda(r), cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
       }

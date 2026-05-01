@@ -6,13 +6,19 @@ Output CSV: same columns + power_w_steady, power_w_ke, power_w_corrected.
 Model:
     P_corrected = λ(R_smoothed) · I_crank · ω²  +  I_crank · ω · dω/dt
                   └─────── steady-state ───────┘  └───── KE term ─────┘
-    λ(R) = α · R^p + β
+    λ(R) = β + α · R^p / (R^p + R_c^p)
 
-Where ω = cad·π/30 (rad/s). α, p, β are from the spin-down fit
-(power-law form, fit on full ω(t) trajectories — see
-analysis/fit_saturating.py). A saturating-torque alternative was
-tested in the same fit framework; the optimum collapsed to pure
-exponential and the saturation parameter didn't earn its keep on RSS.
+Where ω = cad·π/30 (rad/s). α, β, R_c, p are from the spin-down fit
+(saturating Hill form, fit on per-revolution ω(t) trajectories from
+hand-curated video spindowns — see analysis/fit_hill.py). The earlier
+power-law form λ(R) = α·R^p + β systematically overestimates λ at high
+R because the data physically saturates: per-segment λ̂ at R = 80–93
+clusters around 2.0–2.5 1/s rather than continuing to rise. The Hill
+form encodes the physical asymptote (eddy-brake field B(d) is bounded
+above by the magnet's surface field) and lowers weighted RSS by 9.2×
+on the same dataset. β is pinned to the directly-measured per-segment
+λ̂ at R=0; only (α, β) are per-bike, R_c and p are geometry constants.
+
 I_crank is pinned by an outdoor anchor; default below; override with --i.
 
 Implementation notes:
@@ -32,14 +38,15 @@ from pathlib import Path
 
 import numpy as np
 
-# Spin-down derived power-law fit (analysis/fit_saturating.py — trajectory-
-# based, supersedes fit_lambda_R_v3.py's per-segment-λ aggregation).
-# Keep in sync with bridge/lib/physics/calibration.dart defaults.
-LAMBDA_ALPHA = 0.000932  # power-law brake amplitude (1/s · R^-p)
-LAMBDA_BETA = 0.0355     # residual drag at R=0 (1/s)
-LAMBDA_P = 1.33          # brake exponent (dimensionless)
-# Inertia anchor (analysis/pin_inertia.py).
-DEFAULT_I_CRANK = 22.9
+# Hill λ(R) constants from analysis/fit_hill.py on the curated video
+# spindown set (data/calibration/all_spindowns.csv). Keep in sync with
+# bridge/lib/physics/calibration.dart defaults.
+LAMBDA_ALPHA = 2.3623   # saturation amplitude (1/s)
+LAMBDA_BETA = 0.0396    # residual drag at R=0 (1/s) — pinned to median R=0 λ̂
+LAMBDA_RC = 54.58       # half-saturation dial (dimensionless)
+LAMBDA_P = 3.41         # transition sharpness (dimensionless)
+# Inertia anchor (analysis/pin_inertia.py — re-anchored under Hill λ(R)).
+DEFAULT_I_CRANK = 9.14
 # Saturation flags
 CAD_CAP = 124.0       # FTMS BLE cap is 125; treat anything ≥124 as suspect
 R_CAP = 100           # hard mechanical cap; brake locked, no useful info
@@ -103,11 +110,14 @@ def correct(rows_in, i_crank, r_smooth_window=5, dt_window=3):
         kernel = np.ones(dt_window) / dt_window
         omega_dot = np.convolve(omega_dot, kernel, mode="same")
 
-    # Physics — power-law: λ(R) = α·R^p + β. Guard R=0 explicitly to avoid
-    # 0**p evaluating funny at fractional p.
+    # Physics — Hill: λ(R) = β + α · R^p / (R^p + R_c^p). Guard R=0
+    # explicitly so 0**p doesn't trip on fractional p; at R=0 the Hill
+    # term is 0 by construction.
     R_pos = np.maximum(R_smooth, 0.0)
     rp = np.where(R_pos > 0, R_pos ** LAMBDA_P, 0.0)
-    lam_R = LAMBDA_ALPHA * rp + LAMBDA_BETA
+    rcp = LAMBDA_RC ** LAMBDA_P
+    u = np.where(R_pos > 0, rp / (rp + rcp), 0.0)
+    lam_R = LAMBDA_BETA + LAMBDA_ALPHA * u
     p_steady = lam_R * i_crank * omega ** 2
     p_ke = i_crank * omega * omega_dot
     p_corrected = p_steady + p_ke

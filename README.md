@@ -59,12 +59,16 @@ the bridge re-broadcasts:
 
 ![IC8 vs corrected power curves](docs/figures/power_curves.png)
 
-Across most of the operating envelope the bridge sits below the IC8
-broadcast — the IC8's $\text{cad}^{1.5}$ inflates relative to the
-physics-derived $\text{cad}^2$, and our $\lambda(R)$ has milder
-$R$-growth than the IC8's $R^{0.83}$. The two converge near
-cadence ≈ 110-115 at $R = 50$, where the bridge can briefly read
-slightly higher than the bike.
+The two curves disagree both on cadence-scaling (IC8 uses
+$\text{cad}^{1.5}$, the physics gives $\text{cad}^2$) and on
+$R$-scaling (the IC8's $R^{0.83}$ is a soft sub-linear growth, while
+the real eddy-brake $\lambda(R)$ rises sharply through the middle of
+the dial before saturating at the high end — see the spin-down plot
+below). They cross near $R \approx 25$, $\text{cad} \approx 60$; below
+that the bridge reads lower than the bike, above it the bridge reads
+higher. The exact crossover depends on the absolute scale of your
+unit, which the **Power scale** slider lets you pin against an
+external reference.
 
 ## The fix
 
@@ -90,50 +94,56 @@ and the total goes to zero (the rider isn't doing work).
 ### Where the constants come from
 
 **$\lambda(R)$ from spin-downs.** With no rider input, the flywheel
-decelerates as $\omega(t) = \omega_0\,e^{-\lambda(R)\,t}$. The brake
-response is nonlinear: the dial moves a permanent magnet toward the
-flywheel, and the eddy-current torque scales with $B^2(d)$ where $B$ is
-field strength and $d$ is the magnet-flywheel gap. Far-field
-$B \propto 1/d^k$ with $k \approx 3\text{–}6$, so $\lambda(R)$ follows
-a power-law:
+decelerates as $\omega(t) = \omega_0\,e^{-\lambda(R)\,t}$. The brake is
+a permanent magnet that the dial moves toward the flywheel: eddy-current
+torque scales with $B^2(d)$ where $B$ is field strength and $d$ is the
+magnet-flywheel gap. As $d \to 0$ the field of any finite magnet is
+bounded above (it can't exceed the magnet's surface field), so
+$\lambda(R)$ doesn't keep climbing — it saturates. The Hill form
+captures the steep mid-dial transition and the high-$R$ asymptote:
 
-$$\lambda(R) = \alpha \cdot R^p + \beta$$
+$$\lambda(R) = \beta + \alpha \cdot \frac{R^p}{R^p + R_c^p}$$
 
-Fit jointly on the full $\omega(t)$ trajectory of every coastdown
-(BLE/CSC per-rev timing + cumulative-angle integration of crank video at
-high $R$), weighted so each segment contributes equally:
+Fit on per-revolution $\omega(t)$ trajectories from a hand-curated set
+of 42 video-tracked spindowns spanning $R = 0$ to 93
+(`analysis/fit_hill.py`). $\beta$ is pinned to the directly-measured
+median per-segment $\hat{\lambda}$ at $R = 0$ rather than left to
+float, since the Hill shape can't simultaneously hit both the $R = 0$
+anchor and the steep $R = 10\text{–}30$ rise; $R < 10$ isn't a
+practical riding region so pinning $\beta$ makes the low-$R$ end
+physically honest without measurably hurting RSS at $R \geq 15$.
 
-- $\alpha = 9.32 \times 10^{-4}\ \text{s}^{-1}\,R^{-p}$ — power-law brake amplitude
-- $\beta = 0.0355\ \text{s}^{-1}$ — residual drag at $R = 0$
-- $p = 1.33$ — brake exponent (held fixed across bikes)
+- $\alpha = 2.36\ \text{s}^{-1}$ — saturation amplitude (per-bike)
+- $\beta = 0.0396\ \text{s}^{-1}$ — residual drag at $R = 0$ (per-bike)
+- $R_c = 54.6$ — half-saturation dial position (geometry, fixed across bikes)
+- $p = 3.41$ — transition sharpness (geometry, fixed across bikes)
+- asymptote $\alpha + \beta \approx 2.40\ \text{s}^{-1}$
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-The dots are per-segment $\lambda$ values from individual exponential
-fits — useful as context. The shipped curve sits below them at high $R$
-on purpose: each high-$R$ spindown only spans a narrow low-$\omega$
-band (the brake stops the wheel before $\omega$ can grow), so the
-per-segment $\lambda$ averaged over that biased $\omega$ window is not
-the same number as the brake's true $\lambda$ at riding cadence. The
-trajectory fit weights the entire $\omega(t)$ shape across all
-segments instead of collapsing each one to a single number, and lands
-at a milder $p$ that gives sensible predictions at high $R$ + high
-cadence (the older $p = 1.646$ aggregation predicted $\approx 975$ W at
-$R=50$, cad=120, which doesn't match rider experience).
+The Hill curve passes cleanly through the per-segment $\hat{\lambda}$
+cloud across the full dial range. Fit quality on the same dataset is
+9.2× lower weighted RSS than a power-law $\alpha R^p + \beta$ — the
+saturation at high $R$ is a real feature of the data, not just a fit
+preference. The previous power-law fit underestimated $\lambda$ at
+$R \geq 30$ by 2–4× because its constant log-log slope can't bend
+over, and earlier mixed-source fits got dragged low by BLE/CSC
+high-$R$ coastdowns where the rider was lightly pedaling during the
+"decay" tail. The video-only curated set sidesteps both problems.
 
-A saturating-torque alternative $\tau = c(R)\,\omega^* \tanh(\omega/\omega^*)$
-was tested in the same fit framework (`analysis/fit_saturating.py`).
-The optimum runs $\omega^* \to \infty$ at every $p$ — the data shape
-is consistent with pure exponential decay, and an extra saturation
-parameter doesn't earn its keep on RSS.
-
-Auto-calibrate fits $\alpha$ and $\beta$ per-bike; $p$ is held fixed at
-1.33 since it reflects the brake-mechanism geometry.
+Auto-calibrate fits $\alpha$ and $\beta$ per-bike against the same
+saturating design. $R_c$ and $p$ are held fixed because they
+parameterize the brake's gap-vs-dial geometry, which is identical
+across units of the same model.
 
 **$I$ from outdoor anchors.** With $\lambda(R)$ known, the only unknown
 is $I$. Matching outdoor 4iiii crank-meter sessions to indoor sessions
-in HR + cadence bins back-solves $I \approx 22.9\ \text{kg}\,\text{m}^2$
-(`analysis/pin_inertia.py`). The in-app **Power scale** slider absorbs
+in HR + cadence bins back-solves $I \approx 9.14\ \text{kg}\,\text{m}^2$
+(`analysis/pin_inertia.py`). Sanity check: assuming $I_{\text{flywheel}}
+\approx 0.29\ \text{kg}\,\text{m}^2$ for a typical IC8 flywheel
+(~18 kg, ~0.18 m radius), the implied flywheel-to-crank gear ratio is
+$\sqrt{9.14/0.29} \approx 5.6{:}1$, in the ballpark of the IC8's
+reported ~6:1 gearing. The in-app **Power scale** slider absorbs any
 leftover offset against an external reference.
 
 ## Reality check: the model decomposes a sprint cleanly
@@ -176,9 +186,9 @@ isn't possible regardless of what you pair it to.
 ## Limitations
 
 - **Absolute scale depends on your unit.** The *shape* of the correction
-  ($\text{cad}^2$, power-law $\lambda(R)$) is physics-derived and solid. The
-  multiplicative offset depends on your bike's dial calibration and on
-  the inertia anchor — Auto-calibrate fits the first; the Power scale
+  ($\text{cad}^2$, saturating $\lambda(R)$) is physics-derived and solid.
+  The multiplicative offset depends on your bike's dial calibration and
+  on the inertia anchor — Auto-calibrate fits the first; the Power scale
   slider absorbs the second.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm.
   Above the cap, the bridge falls back to CSC-derived cadence if the
@@ -202,13 +212,17 @@ bridge/lib/ble/                  BLE central + peripheral
 bridge/lib/physics/              corrector + coastdown fit (Dart port of
                                  spindown_fit.py — what Auto-calibrate runs)
 analysis/parse_nrf_log.py        nRF Connect log -> CSV (FTMS + CSC joined)
-analysis/fit_lambda_R_v3.py      cleaned coastdowns -> α, β, p (power-law
-                                 fit on video-derived bounds)
+analysis/curate_spindowns.py     interactive in/out-marker tool over BLE +
+                                 video coastdown candidates
+analysis/aggregate_spindowns.py  merges curated bounds into one per-rev ω(t)
+                                 dataset (data/calibration/all_spindowns.csv)
+analysis/fit_hill.py             Hill-form λ(R) fit on the curated dataset
+                                 (video-only, β pinned to R=0 measurement)
 analysis/pin_inertia.py          outdoor 4iiii FIT files -> I_crank
 analysis/correct_power.py        offline reprocessor (Python mirror of the
                                  Dart corrector)
 analysis/plot_surge_examples.py  generates the README figures
-data/calibration/                BLE logs used to fit the defaults
+data/calibration/                BLE logs + crank videos used to fit defaults
 docs/figures/                    README plots
 ```
 

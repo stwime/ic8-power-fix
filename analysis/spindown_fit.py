@@ -49,7 +49,6 @@ ROOT = Path(__file__).parent.parent
 SOURCES = [
     ROOT / "data/calibration/spin_downs_apr29.csv",
     ROOT / "data/calibration/spin_downs_apr30.csv",
-    ROOT / "data/calibration/spin_downs_super_high_r.csv",
 ]
 # (session_label, R, occurrence_index) — segments to drop.
 BAD_SEGMENTS = {

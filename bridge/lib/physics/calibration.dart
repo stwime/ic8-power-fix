@@ -5,30 +5,43 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Tunable physics constants — split from [Constants] so they can be edited at
 /// runtime via the settings screen and persisted across app launches.
 ///
-/// Brake/residual drag use a power-law form
-///     λ(R) = α · R^p + β
-/// fit on the full ω(t) spin-down trajectories (analysis/fit_saturating.py),
-/// which supersedes the earlier per-segment-λ aggregation in
-/// fit_lambda_R_v3.py. The trajectory-based fit weights each spindown
-/// equally regardless of rev count, removing the high-R fitted-λ bias
-/// that pushed p up to 1.646 in the older aggregation; the new fit
-/// converges on a milder p ≈ 1.33.
+/// Brake/residual drag use a saturating Hill form
+///     λ(R) = β + α · R^p / (R^p + R_c^p)
+/// fit on per-revolution ω(t) trajectories from a hand-curated set of
+/// 42 video-tracked spindowns spanning R = 0 to 93
+/// (analysis/fit_hill.py). The data physically shows saturation at
+/// high R — the per-segment λ̂ at R = 80–93 sits flat at ~2.0–2.5 1/s
+/// rather than continuing to rise — so the previous power-law form
+/// (which has a constant log-log slope by construction) was
+/// systematically wrong above R ≈ 30. The new fit lowers weighted RSS
+/// by 9.2× on the same dataset.
 ///
-/// A saturating-torque model τ = c(R)·ω*·tanh(ω/ω*) was tested in the
-/// same fit framework. The optimum runs ω* → ∞ at every p — the data
-/// shape is consistent with pure exponential decay across the full
-/// observed ω-range and an extra saturation parameter doesn't earn
-/// its keep on RSS.
+///   α   = saturation amplitude (1/s) — per-bike (magnet × flywheel)
+///   β   = residual drag at R=0 (1/s) — per-bike (bearings + air)
+///   R_c = half-saturation dial position — geometry, fixed across bikes
+///   p   = transition sharpness — geometry, fixed across bikes
 ///
-/// The exponent [defaultPower] is held fixed across bikes — it reflects
-/// the brake-mechanism geometry (eddy-current B²(d) coupling), not
-/// per-unit calibration variation, so we don't expose it in the
-/// auto-calibration flow. Only (α, β) are fit per bike. See [Coastdown.fitBrake].
+/// β is pinned in the offline fit to the directly-measured per-segment
+/// λ̂ at R=0 (median 0.0396 1/s) rather than left to float; the free
+/// fit lifts β to ~0.08 because Hill's R^p shape can't simultaneously
+/// hit R=0 and the steep R=10–30 rise, but R<10 is not a practical
+/// riding region so pinning β makes the low-R end physically honest
+/// without measurably hurting RSS at R≥15.
+///
+/// [defaultRcDial] and [defaultPower] are geometry-driven — they
+/// reflect the eddy-brake mechanism (gap-vs-dial mapping, B²(d)
+/// coupling), not per-unit calibration variation — so we don't expose
+/// them in the auto-calibration flow. Only (α, β) are fit per bike.
+/// See [Coastdown.fitBrake].
 class Calibration {
-  static const double defaultAlpha = 0.000932;  // 1/s · R^-p — power-law amp
-  static const double defaultBeta = 0.0355;     // 1/s — residual drag at R=0
-  static const double defaultPower = 1.33;      // dimensionless — brake exponent
-  static const double defaultICrank = 22.9;     // kg·m² (effective, at crank)
+  // Hill λ(R) = β + α·R^p/(R^p + R_c^p). Constants from
+  // analysis/fit_hill.py on the hand-curated all_spindowns.csv (video
+  // sources only, R relabeled from the BLE log).
+  static const double defaultAlpha = 2.3623;    // 1/s — saturation amplitude
+  static const double defaultBeta = 0.0396;     // 1/s — residual drag at R=0
+  static const double defaultRcDial = 54.58;    // half-saturation dial position
+  static const double defaultPower = 3.41;      // transition sharpness
+  static const double defaultICrank = 9.14;     // kg·m² (effective, at crank)
 
   /// Bounds for the I_crank slider. Wide enough to cover any plausible
   /// indoor-cycle bike, from a light entry-level FTMS bike with a small
@@ -65,12 +78,14 @@ class Calibration {
     );
   }
 
-  /// λ(R) = α · R^p + β. R clamped at 0 since the dial is physically
-  /// nonnegative and 0^p evaluates funny at fractional p.
+  /// λ(R) = β + α · R^p / (R^p + R_c^p), with R_c and p held fixed.
+  /// R clamped at 0; at R=0 the eddy term is zero so λ(0) = β.
   double lambdaAt(double r) {
     final rPos = r > 0 ? r : 0.0;
     if (rPos == 0.0) return beta;
-    return alpha * math.pow(rPos, defaultPower).toDouble() + beta;
+    final rp = math.pow(rPos, defaultPower).toDouble();
+    final rcp = math.pow(defaultRcDial, defaultPower).toDouble();
+    return beta + alpha * rp / (rp + rcp);
   }
 
   Future<void> setICrank(double v) async {

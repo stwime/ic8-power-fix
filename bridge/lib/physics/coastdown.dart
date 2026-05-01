@@ -48,9 +48,11 @@ class CoastdownPoint {
   });
 }
 
-/// Result of fitting λ(R) = α·R^p + β across multiple [CoastdownPoint]s.
-/// The exponent p is held fixed at [Calibration.defaultPower]; the fitter
-/// recovers (α, β) by linear weighted least squares.
+/// Result of fitting λ(R) = β + α · R^p / (R^p + R_c^p) across multiple
+/// [CoastdownPoint]s. The shape parameters p and R_c are held fixed at
+/// [Calibration.defaultPower] and [Calibration.defaultRcDial] (geometry,
+/// not per-bike); the fitter recovers (α, β) by linear weighted least
+/// squares against the saturating design u(R) = R^p / (R^p + R_c^p).
 class BrakeFit {
   final double alpha;
   final double beta;
@@ -330,8 +332,9 @@ class CoastdownDetector {
   }
 }
 
-/// Weighted least-squares fit of λ(R) = α·R^p + β with the exponent p
-/// held fixed at [Calibration.defaultPower].
+/// Weighted least-squares fit of λ(R) = β + α · R^p / (R^p + R_c^p) with
+/// shape parameters [power] and [rcDial] held fixed at the geometry-
+/// derived [Calibration.defaultPower] and [Calibration.defaultRcDial].
 ///
 /// Weights combine √n (sample count) with log(cadHi/cadLo) (dynamic range
 /// observed) — a 125→10 segment carries more information about the decay
@@ -341,6 +344,7 @@ class CoastdownDetector {
 BrakeFit fitBrake(
   List<CoastdownPoint> points, {
   double power = Calibration.defaultPower,
+  double rcDial = Calibration.defaultRcDial,
 }) {
   if (points.length < 2) {
     throw ArgumentError('need ≥2 points, got ${points.length}');
@@ -350,12 +354,19 @@ BrakeFit fitBrake(
     throw ArgumentError('need ≥2 distinct R values, got ${distinctR.length}');
   }
 
-  // Linear-in-(α, β) WLS at fixed p. Design row is (R^p, 1).
+  final rcp = math.pow(rcDial, power).toDouble();
+
+  // Linear-in-(α, β) WLS at fixed (p, R_c). Design row is (u, 1) with
+  // u = R^p / (R^p + R_c^p) — the saturating Hill design.
   double sw = 0, su = 0, su2 = 0, slam = 0, sulam = 0;
   for (final pt in points) {
-    final u = pt.resistance == 0
+    final r = pt.resistance;
+    final u = r == 0
         ? 0.0
-        : math.pow(pt.resistance, power).toDouble();
+        : (() {
+            final rp = math.pow(r, power).toDouble();
+            return rp / (rp + rcp);
+          })();
     final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
     final w = wRoot * wRoot;
     sw += w;
@@ -375,11 +386,15 @@ BrakeFit fitBrake(
   double sse = 0, wsum = 0;
   final residuals = <({int r, double measured, double predicted})>[];
   for (final pt in points) {
-    final u = pt.resistance == 0
+    final r = pt.resistance;
+    final u = r == 0
         ? 0.0
-        : math.pow(pt.resistance, power).toDouble();
+        : (() {
+            final rp = math.pow(r, power).toDouble();
+            return rp / (rp + rcp);
+          })();
     final pred = alpha * u + beta;
-    residuals.add((r: pt.resistance, measured: pt.lambda, predicted: pred));
+    residuals.add((r: r, measured: pt.lambda, predicted: pred));
     final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
     final w = wRoot * wRoot;
     final e = pt.lambda - pred;
