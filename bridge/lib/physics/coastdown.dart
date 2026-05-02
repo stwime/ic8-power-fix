@@ -48,11 +48,13 @@ class CoastdownPoint {
   });
 }
 
-/// Result of fitting λ(R) = β + α · R^p / (R^p + R_c^p) across multiple
-/// [CoastdownPoint]s. The shape parameters p and R_c are held fixed at
-/// [Calibration.defaultPower] and [Calibration.defaultRcDial] (geometry,
-/// not per-bike); the fitter recovers (α, β) by linear weighted least
-/// squares against the saturating design u(R) = R^p / (R^p + R_c^p).
+/// Result of fitting Wouterse linear-regime
+///     λ_eff(R) = β + (2ακ/I) · H(R)²   with H(R) = R^p / (R^p + R_h^p)
+/// across multiple [CoastdownPoint]s. The shape parameters p, R_h, κ
+/// and the inertia I are held fixed at the [Calibration] defaults
+/// (geometry / firmware-mapping, not per-bike); the fitter recovers
+/// (α, β) by linear weighted least squares against the design row
+/// u(R) = (2κ/I) · H(R)².
 class BrakeFit {
   final double alpha;
   final double beta;
@@ -332,19 +334,27 @@ class CoastdownDetector {
   }
 }
 
-/// Weighted least-squares fit of λ(R) = β + α · R^p / (R^p + R_c^p) with
-/// shape parameters [power] and [rcDial] held fixed at the geometry-
-/// derived [Calibration.defaultPower] and [Calibration.defaultRcDial].
+/// Weighted least-squares fit of the Wouterse linear-regime relation
+///     λ_eff(R) = β + (2·α·κ / I) · H(R)²
+/// with H(R) = R^p / (R^p + R_h^p) and [power], [rh], [kappa], [iCrank]
+/// held fixed at the geometry-derived [Calibration] defaults.
 ///
-/// Weights combine √n (sample count) with log(cadHi/cadLo) (dynamic range
-/// observed) — a 125→10 segment carries more information about the decay
-/// rate than a 77→44 one even at the same n.
+/// User coastdowns at typical cadences sit well below the brake's
+/// critical ω, so the bell-curve term collapses to linear damping with
+/// effective decay rate λ_eff(R). The design row is (u, 1) with
+/// u = (2κ/I)·H(R)² and the fit recovers (α, β) linearly.
+///
+/// Weights combine √n (sample count) with log(cadHi/cadLo) (dynamic
+/// range observed) — a 125→10 segment carries more information about
+/// the decay rate than a 77→44 one even at the same n.
 ///
 /// Requires ≥2 points across ≥2 distinct R values.
 BrakeFit fitBrake(
   List<CoastdownPoint> points, {
-  double power = Calibration.defaultPower,
-  double rcDial = Calibration.defaultRcDial,
+  double power = Calibration.defaultP,
+  double rh = Calibration.defaultRh,
+  double kappa = Calibration.defaultKappa,
+  double iCrank = Calibration.defaultICrank,
 }) {
   if (points.length < 2) {
     throw ArgumentError('need ≥2 points, got ${points.length}');
@@ -354,10 +364,11 @@ BrakeFit fitBrake(
     throw ArgumentError('need ≥2 distinct R values, got ${distinctR.length}');
   }
 
-  final rcp = math.pow(rcDial, power).toDouble();
+  final rhp = math.pow(rh, power).toDouble();
+  final scale = 2.0 * kappa / iCrank;
 
-  // Linear-in-(α, β) WLS at fixed (p, R_c). Design row is (u, 1) with
-  // u = R^p / (R^p + R_c^p) — the saturating Hill design.
+  // Linear-in-(α, β) WLS at fixed (p, R_h, κ, I). Design row is (u, 1)
+  // with u = (2κ/I) · H(R)².
   double sw = 0, su = 0, su2 = 0, slam = 0, sulam = 0;
   for (final pt in points) {
     final r = pt.resistance;
@@ -365,7 +376,8 @@ BrakeFit fitBrake(
         ? 0.0
         : (() {
             final rp = math.pow(r, power).toDouble();
-            return rp / (rp + rcp);
+            final h = rp / (rp + rhp);
+            return scale * h * h;
           })();
     final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
     final w = wRoot * wRoot;
@@ -391,7 +403,8 @@ BrakeFit fitBrake(
         ? 0.0
         : (() {
             final rp = math.pow(r, power).toDouble();
-            return rp / (rp + rcp);
+            final h = rp / (rp + rhp);
+            return scale * h * h;
           })();
     final pred = alpha * u + beta;
     residuals.add((r: r, measured: pt.lambda, predicted: pred));

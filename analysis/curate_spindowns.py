@@ -42,21 +42,18 @@ from matplotlib.widgets import SpanSelector
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_nrf_log import parse_log  # noqa: E402
-from spindown_fit import find_clean_coastdowns, _crank_rev_obs  # noqa: E402
 from spindown_fit_video import integrate_to_cumulative, load_video_modpi  # noqa: E402  # noqa: F401
 from extract_spindowns_from_video import (  # noqa: E402
     OMEGA_WINDOW_S, SMOOTH_S, FLOOR,
     windowed_omega, edge_safe_mean, find_active_runs,
     detect_floor as vid_detect_floor)
-from aggregate_spindowns import BLE_SOURCES, VIDEO_SOURCES, _ble_R_lookup  # noqa: E402
+from aggregate_spindowns import VIDEO_SOURCES, _ble_R_lookup  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 BOUNDS_JSON = ROOT / "data/calibration/spindown_bounds.json"
 
 # Permissive: catch what the strict detector drops, then let user decide.
 MIN_PEAK_PERMISSIVE = 3.0   # rad/s ≈ 30 rpm  (vs 5.0 in extract_*)
-BLE_MIN_CAD_START = 50.0    # rpm (vs 70)
-BLE_MIN_SAMPLES = 2         # (vs 4)
 
 # How much context (in source seconds) to show around each candidate so you
 # can see the lead-up and the runout, not just the auto-detected window.
@@ -67,94 +64,6 @@ VIEW_PAD_AFTER_S = 8.0
 # ---------------------------------------------------------------------------
 # Candidate generators.
 # ---------------------------------------------------------------------------
-
-def _ble_rebase(rows: list[dict]) -> float | None:
-    """The constant offset that maps crank_event_time_s into wall clock.
-    Picked from the first row where both timestamp_s and crank_event_time_s
-    are present: rebase = timestamp_s - crank_event_time_s. Once set it's
-    fixed for the whole log."""
-    for r in rows:
-        ts = r.get("timestamp_s"); evt = r.get("crank_event_time_s")
-        if ts in (None, "") or evt in (None, ""):
-            continue
-        try:
-            return float(ts) - float(evt)
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def _full_ble_per_rev(rows: list[dict], rebase: float
-                      ) -> tuple[np.ndarray, np.ndarray]:
-    """Per-rev ω over the *entire* BLE row list (not just one segment).
-
-    Used to give each candidate's display window some context — lead-up
-    and runout — beyond the auto-detected segment bounds. Times are
-    crank_event_time_s + rebase (i.e., wall-clock-compatible).
-    """
-    obs = []
-    last_n = last_evt = None
-    for r in rows:
-        nv = r.get("crank_revs"); tv = r.get("crank_event_time_s")
-        if nv in (None, "") or tv in (None, ""):
-            continue
-        try:
-            n = int(nv); evt = float(tv)
-        except (ValueError, TypeError):
-            continue
-        evt_wall = evt + rebase
-        if last_n is not None and (n <= last_n or evt_wall <= last_evt + 1e-6):
-            continue
-        if last_n is not None:
-            d_n = n - last_n
-            dt = evt_wall - last_evt
-            if dt > 0:
-                obs.append((0.5 * (evt_wall + last_evt),
-                            2.0 * math.pi * d_n / dt))
-        last_n, last_evt = n, evt_wall
-    if not obs:
-        return np.array([]), np.array([])
-    t = np.asarray([o[0] for o in obs], dtype=float)
-    om = np.asarray([o[1] for o in obs], dtype=float)
-    return t, om
-
-
-def ble_candidates(name: str, path: Path) -> list[dict]:
-    rows = list(csv.DictReader(open(path)))
-    rebase = _ble_rebase(rows)
-    if rebase is None:
-        return []
-    full_csc_t, full_csc_om = _full_ble_per_rev(rows, rebase)
-    segs = find_clean_coastdowns(
-        rows, min_cad_start=BLE_MIN_CAD_START, min_samples=BLE_MIN_SAMPLES)
-    out = []
-    per_R: dict[int, int] = {}
-    for cid, (seg, R, term) in enumerate(segs):
-        occ = per_R.get(R, 0); per_R[R] = occ + 1
-        obs = _crank_rev_obs(seg)
-        if len(obs) < 2:
-            continue
-        # Segment bounds in the same rebased CSC clock as full_csc_t.
-        et = np.array([o[1] for o in obs], dtype=float)
-        seg_evt0 = float(et[0]) + rebase
-        seg_evt1 = float(et[-1]) + rebase
-        # Per-rev midpoints from the segment's own (n, evt) pairs — these
-        # are the natural in/out for a per-rev-ω fit window.
-        seg_mid = 0.5 * (et[:-1] + et[1:]) + rebase
-        view_lo = seg_evt0 - VIEW_PAD_BEFORE_S
-        view_hi = seg_evt1 + VIEW_PAD_AFTER_S
-        m = (full_csc_t >= view_lo) & (full_csc_t <= view_hi)
-        if m.sum() < 2:
-            continue
-        out.append({
-            "source": name, "candidate_id": cid,
-            "R": R, "occ": occ, "term": term,
-            "t": full_csc_t[m], "omega": full_csc_om[m],
-            "t_default_in": float(seg_mid[0]),
-            "t_default_out": float(seg_mid[-1]),
-        })
-    return out
-
 
 def video_candidates(name: str, log: Path, csv_path: Path,
                      lag: float) -> list[dict]:
@@ -333,10 +242,6 @@ def curate(candidates: list[dict], state: dict):
 
 def main():
     candidates: list[dict] = []
-    for name, path in BLE_SOURCES:
-        c = ble_candidates(name, path)
-        print(f"{name}: {len(c)} candidates")
-        candidates += c
     for v in VIDEO_SOURCES:
         c = video_candidates(v["name"], v["log"], v["csv"], v["lag"])
         print(f"{v['name']}: {len(c)} candidates")

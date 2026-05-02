@@ -166,22 +166,23 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: Slider(
-              min: Calibration.iCrankMin,
-              max: Calibration.iCrankMax,
-              divisions: ((Calibration.iCrankMax - Calibration.iCrankMin) * 10).round(),
-              value: cal.iCrank.clamp(Calibration.iCrankMin, Calibration.iCrankMax),
-              label: cal.iCrank.toStringAsFixed(1),
+              min: Calibration.powerScaleMin,
+              max: Calibration.powerScaleMax,
+              divisions: ((Calibration.powerScaleMax - Calibration.powerScaleMin) * 20).round(),
+              value: cal.powerScale.clamp(
+                  Calibration.powerScaleMin, Calibration.powerScaleMax),
+              label: '${(cal.powerScale * 100).round()}%',
               onChanged: (v) {
-                setState(() => cal.iCrank = v);
+                setState(() => cal.powerScale = v);
               },
               onChangeEnd: (v) async {
-                await cal.setICrank(v);
+                await cal.setPowerScale(v);
                 if (mounted) setState(() {});
               },
             )),
             SizedBox(
               width: 64,
-              child: Text(cal.iCrank.toStringAsFixed(1),
+              child: Text('${(cal.powerScale * 100).round()}%',
                   textAlign: TextAlign.right,
                   style: Theme.of(context).textTheme.titleMedium),
             ),

@@ -7,7 +7,7 @@ import 'package:ic8_bridge/physics/corrector.dart';
 
 void main() {
   group('Corrector.push', () {
-    test('steady state matches λ(R)·I·ω² formula', () {
+    test('steady state matches τ_brake(R, ω)·ω formula', () {
       final cal = Calibration.defaults();
       final c = Corrector(cal);
       // Warm up the median filter and ω-buffer at constant R, constant cad.
@@ -24,7 +24,7 @@ void main() {
         );
       }
       final omega = cad * math.pi / 30.0;
-      final expected = cal.lambdaAt(r.toDouble()) * cal.iCrank * omega * omega;
+      final expected = cal.brakePowerAt(r.toDouble(), omega);
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 0.5));
       expect(c.lastKeW.abs(), closeTo(0, 1e-6));
@@ -68,7 +68,7 @@ void main() {
                    cadenceRpmFtms: Constants.cadCap);
       }
       const omega = Constants.cadCap * math.pi / 30.0;
-      final expected = cal.lambdaAt(30.0) * cal.iCrank * omega * omega;
+      final expected = cal.brakePowerAt(30.0, omega);
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 0.5));
     });
@@ -86,7 +86,7 @@ void main() {
                    cadenceRpmFtms: 130.0);
       }
       const omega = Constants.cadCap * math.pi / 30.0;
-      final expected = cal.lambdaAt(30.0) * cal.iCrank * omega * omega;
+      final expected = cal.brakePowerAt(30.0, omega);
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 0.5));
     });
@@ -122,7 +122,7 @@ void main() {
       final p = c.push(timestampS: 5, resistance: 80, cadenceRpm: 80,
                        csCadenceAvailable: true, cadenceRpmFtms: 80);
       const omega = 80.0 * math.pi / 30.0;
-      final expected = cal.lambdaAt(30.0) * cal.iCrank * omega * omega;
+      final expected = cal.brakePowerAt(30.0, omega);
       expect(p, isNotNull);
       expect(p!, closeTo(expected, 1.0));
     });
@@ -149,13 +149,19 @@ void main() {
         c.push(timestampS: i.toDouble(), resistance: r, cadenceRpm: cad,
                csCadenceAvailable: true, cadenceRpmFtms: cad);
       }
+      final omega = cad * math.pi / 30.0;
       final pBefore = c.lastCorrectedW;
-      // Mutate calibration in place — same object, no restart.
-      cal.iCrank = cal.iCrank * 2;
+      expect(pBefore, closeTo(cal.brakePowerAt(r.toDouble(), omega), 0.5));
+      // Mutate powerScale in place — same Calibration object, no
+      // Corrector restart. powerScale acts as a multiplier on α inside
+      // tauBrakeAt, so a 1.5× scale should ≈1.5× the eddy-brake portion
+      // of steady-state power.
+      cal.powerScale = 1.5;
       final p = c.push(timestampS: 10, resistance: r, cadenceRpm: cad,
                        csCadenceAvailable: true, cadenceRpmFtms: cad);
       expect(p, isNotNull);
-      expect(p!, closeTo(pBefore * 2, 1.0));
+      expect(p!, closeTo(cal.brakePowerAt(r.toDouble(), omega), 0.5));
+      expect(p, isNot(closeTo(pBefore, 1.0)));
     });
   });
 }

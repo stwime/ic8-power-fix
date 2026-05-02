@@ -82,8 +82,7 @@ class Corrector {
       return null;
     }
 
-    final double pSteady =
-        calibration.lambdaAt(rSmooth) * calibration.iCrank * omega * omega;
+    final double pSteady = calibration.brakePowerAt(rSmooth, omega);
     final double pKe = calibration.iCrank * omega * omegaDot;
     final double pCorrected = math.max(0.0, pSteady + pKe);
 

@@ -140,60 +140,67 @@ void main() {
   });
 
   group('fitBrake', () {
-    test('recovers (α, β) from synthetic Hill decays', () {
-      // 5 distinct R values; λ generated from the Hill form
-      //   λ(R) = β + α · R^p / (R^p + R_c^p)
+    test('recovers (α, β) from synthetic Wouterse-linear decays', () {
+      // 5 distinct R values; λ generated from the Wouterse linear-regime
+      // form
+      //   λ_eff(R) = β + (2ακ/I) · H(R)²,  H(R) = R^p / (R^p + R_h^p)
       // with shape parameters held at the defaults. The fitter is
-      // linear-in-(α, β) at fixed (p, R_c) so recovery is near machine
-      // precision.
-      const alpha = 2.0;
+      // linear-in-(α, β) at fixed (p, R_h, κ, I) so recovery is near
+      // machine precision.
+      const alpha = 320.0;
       const beta = 0.045;
-      const p = Calibration.defaultPower;
-      const rc = Calibration.defaultRcDial;
-      final rcp = math.pow(rc, p).toDouble();
-      double hillLambda(int r) {
+      const p = Calibration.defaultP;
+      const rh = Calibration.defaultRh;
+      const kappa = Calibration.defaultKappa;
+      const iCrank = Calibration.defaultICrank;
+      final rhp = math.pow(rh, p).toDouble();
+      double wouterseLinLambda(int r) {
         if (r == 0) return beta;
         final rp = math.pow(r, p).toDouble();
-        return beta + alpha * rp / (rp + rcp);
+        final h = rp / (rp + rhp);
+        return beta + 2.0 * alpha * kappa * h * h / iCrank;
       }
       final allRows = <CoastdownSample>[];
       for (final r in [8, 18, 30, 55, 80]) {
         final seg = _synth(
-            r: r, lambda: hillLambda(r), cad0: 110, nSamples: 8,
+            r: r, lambda: wouterseLinLambda(r), cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
       }
       final pts = extractCoastdownPoints(allRows);
       expect(pts.length, 5);
       final fit = fitBrake(pts);
-      expect(fit.alpha, closeTo(alpha, 1e-9));
+      expect(fit.alpha, closeTo(alpha, 1e-6));
       expect(fit.beta, closeTo(beta, 1e-9));
       expect(fit.rms, lessThan(1e-6));
     });
 
     test('handles R=0 (residual-drag baseline) without exploding', () {
-      // R=0 contributes the β baseline: λ = β. The Hill term is 0 there
-      // (R^p / (R^p + R_c^p) = 0), so the design row is (0, 1).
-      const alpha = 2.0;
+      // R=0 contributes the β baseline: λ = β. H(0) = 0 there, so the
+      // design row is (0, 1).
+      const alpha = 320.0;
       const beta = 0.045;
-      const p = Calibration.defaultPower;
-      const rc = Calibration.defaultRcDial;
-      final rcp = math.pow(rc, p).toDouble();
-      double hillLambda(int r) {
+      const p = Calibration.defaultP;
+      const rh = Calibration.defaultRh;
+      const kappa = Calibration.defaultKappa;
+      const iCrank = Calibration.defaultICrank;
+      final rhp = math.pow(rh, p).toDouble();
+      double wouterseLinLambda(int r) {
         if (r == 0) return beta;
         final rp = math.pow(r, p).toDouble();
-        return beta + alpha * rp / (rp + rcp);
+        final h = rp / (rp + rhp);
+        return beta + 2.0 * alpha * kappa * h * h / iCrank;
       }
       final allRows = <CoastdownSample>[];
       for (final r in [0, 10, 30, 60]) {
         final seg = _synth(
-            r: r, lambda: hillLambda(r), cad0: 110, nSamples: 8,
+            r: r, lambda: wouterseLinLambda(r), cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
       }
       final pts = extractCoastdownPoints(allRows);
       final fit = fitBrake(pts);
-      expect(fit.alpha, closeTo(alpha, 1e-9));
+      expect(fit.alpha, closeTo(alpha, 1e-6));
       expect(fit.beta, closeTo(beta, 1e-9));
     });
 
