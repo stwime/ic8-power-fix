@@ -83,7 +83,10 @@ class Corrector {
     }
 
     final double pSteady = calibration.brakePowerAt(rSmooth, omega);
-    final double pKe = calibration.iCrank * omega * omegaDot;
+    // KE uses effective I_crank so the powerScale slider scales the
+    // transient term by the same factor as the steady term — the whole
+    // output is linear in powerScale without any cadence/R distortion.
+    final double pKe = calibration.effectiveICrank * omega * omegaDot;
     final double pCorrected = math.max(0.0, pSteady + pKe);
 
     lastSteadyW = pSteady;

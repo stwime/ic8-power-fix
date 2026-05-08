@@ -40,6 +40,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// I_flywheel = 0.461 kg·m² (46 cm dia, 18 kg, two rings r=13–18 cm at
 /// 2.5× thickness) and gear ratio g = 4.5 (measured) gives
 /// I_crank = g²·I_flywheel ≈ 9.34 kg·m².
+///
+/// [powerScale] is a coupled absolute-scale knob: it multiplies α and
+/// I_crank by the same factor, so the eddy steady term, the residual
+/// drag term, and the KE term all scale by the same factor and the
+/// total output is linear in [powerScale]. Cadence-shape and R-shape
+/// are untouched. The decay-rate λ(R) = β + (2ακ/I)·H(R)² is
+/// powerScale-invariant because α and I cancel — the bike's physical
+/// coastdown rate doesn't depend on what the bridge displays.
+///
+/// The default 0.80 absorbs the residual ~20% steady-state overshoot
+/// observed against perceived effort at R≈31, cad≈90 with the geometry
+/// I_crank = 9.34 kg·m². Tune against an external power meter when one
+/// is available.
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on the hand-curated
   // video-only spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
@@ -49,11 +62,12 @@ class Calibration {
   static const double defaultP = 1.07;          // Hill sharpness
   static const double defaultKappa = 0.1465;    // s/rad — 1/ω_c at saturation
   static const double defaultICrank = 9.34;     // kg·m² (effective, at crank)
-  static const double defaultPowerScale = 1.0;  // user-facing α multiplier
+  static const double defaultPowerScale = 0.80; // coupled α + I_crank scale
 
-  /// Bounds for the Power scale slider — multiplier on α applied at every
-  /// τ_brake evaluation. 0.5–2.0 covers the range of unit-to-unit
-  /// firmware-calibration spread we'd plausibly see across IC8s.
+  /// Bounds for the Power scale slider — coupled multiplier on α and
+  /// I_crank applied at every output evaluation. 0.5–2.0 covers the range
+  /// of unit-to-unit firmware-calibration spread we'd plausibly see across
+  /// IC8s on top of the 0.80 default.
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
@@ -63,7 +77,11 @@ class Calibration {
   static const String _keyAlpha = 'cal.alphaW';
   static const String _keyBeta = 'cal.betaW';
   static const String _keyICrank = 'cal.iCrank';
-  static const String _keyPowerScale = 'cal.powerScale';
+  // v2 suffix: powerScale switched semantics from α-only multiplier to
+  // coupled α + I_crank multiplier, with default 0.80. Old stored values
+  // had α-only meaning and a 1.0 default — loading them under the new
+  // semantics would silently change behaviour.
+  static const String _keyPowerScale = 'cal.powerScale.v2';
 
   double alpha;
   double beta;
@@ -104,15 +122,22 @@ class Calibration {
     return rp / (rp + rhp);
   }
 
+  /// Effective inertia at the crank after the user-facing [powerScale].
+  /// Used both inside [tauBrakeAt] (for the residual-drag I·β·ω term)
+  /// and by [Corrector] for the KE term I·ω·dω/dt, so both the steady
+  /// and the transient terms scale linearly with [powerScale].
+  double get effectiveICrank => iCrank * powerScale;
+
   /// Brake torque + bearing/air residual drag at the crank, in N·m.
   /// Sum of the eddy-current Wouterse term and a linear residual. The
-  /// user-facing [powerScale] multiplies α so the Settings slider scales
-  /// steady-state brake power.
+  /// user-facing [powerScale] multiplies α (eddy term) and I_crank
+  /// (residual term) by the same factor, so τ_brake scales linearly
+  /// with [powerScale] without distorting cadence or R shape.
   double tauBrakeAt(double r, double omega) {
     final h = _hill(r);
     final x = defaultKappa * h * omega;
     final tauEddy = (alpha * powerScale) * h * 2.0 * x / (1.0 + x * x);
-    final tauResidual = iCrank * beta * omega;
+    final tauResidual = effectiveICrank * beta * omega;
     return tauEddy + tauResidual;
   }
 
@@ -124,10 +149,13 @@ class Calibration {
   /// Effective decay rate λ(R) in the low-ω linear regime. Equal to
   /// −d(ln ω)/dt for an unloaded coastdown at small ω. Used by
   /// [Coastdown.fitBrake] which fits log-linear λ̂ on user coastdowns.
-  ///   λ_lin(R) = β + 2·(α·s)·κ·H(R)² / I,  s = powerScale
+  ///   λ_lin(R) = β + 2·α·κ·H(R)² / I
+  /// [powerScale] cancels because effective α and effective I scale
+  /// together, so the modelled coastdown rate is invariant to the
+  /// output-gain knob (as it should be — it's a property of the bike).
   double lambdaLinearAt(double r) {
     final h = _hill(r);
-    return beta + 2.0 * (alpha * powerScale) * defaultKappa * h * h / iCrank;
+    return beta + 2.0 * alpha * defaultKappa * h * h / iCrank;
   }
 
   Future<void> setICrank(double v) async {
@@ -181,6 +209,7 @@ class Calibration {
     await prefs.remove('cal.alpha');
     await prefs.remove('cal.beta');
     await prefs.remove('cal.rcDial');
+    await prefs.remove('cal.powerScale');
   }
 
   bool get isAtDefaults =>

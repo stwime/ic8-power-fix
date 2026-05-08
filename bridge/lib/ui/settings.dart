@@ -161,14 +161,17 @@ class _SettingsPageState extends State<SettingsPage> {
           _section('Power scale'),
           Text('Use this if your power numbers feel too high or too low '
               'compared to another power meter you trust. Slide right to '
-              'increase your power, left to decrease.',
+              'increase your power, left to decrease. Scales steady-state '
+              'and acceleration response by the same factor.',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: Slider(
               min: Calibration.powerScaleMin,
               max: Calibration.powerScaleMax,
-              divisions: ((Calibration.powerScaleMax - Calibration.powerScaleMin) * 20).round(),
+              // 0.01 step — fine enough to tune against an external
+              // power meter without big jumps in absolute output.
+              divisions: ((Calibration.powerScaleMax - Calibration.powerScaleMin) * 100).round(),
               value: cal.powerScale.clamp(
                   Calibration.powerScaleMin, Calibration.powerScaleMax),
               label: '${(cal.powerScale * 100).round()}%',

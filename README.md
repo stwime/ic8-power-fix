@@ -153,8 +153,14 @@ perimeter-weighted aluminum flywheel (two annular rings $r = 13\text{–}18$
 cm at $\approx 2.5\times$ thickness). With measured flywheel-to-crank
 gear ratio $g = 4.5$, the effective inertia at the crank is
 $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} \approx 9.34\
-\text{kg}\,\text{m}^2$. The in-app **Power scale** slider absorbs any
-leftover offset against an external reference.
+\text{kg}\,\text{m}^2$. The in-app **Power scale** slider scales α and
+$I_{\text{crank}}$ together by the same factor, so steady-state, residual
+drag, and the KE term all scale linearly in lockstep — a clean
+absolute-scale knob that doesn't distort cadence or R shape. Default is
+0.80, which lands ~20% under the IC8's own broadcast at $R \approx 31$,
+$\text{cad} \approx 90$, matching observed steady-state overshoot
+against perceived effort. Tune against an external power meter when
+one is available.
 
 ## Reality check: the model decomposes a sprint cleanly
 
@@ -195,11 +201,19 @@ isn't possible regardless of what you pair it to.
 
 ## Limitations
 
-- **Absolute scale depends on your unit.** The *shape* of the
-  correction (Wouterse $\tau(\omega)$, saturating $\tau_{\max}(R)$) is
-  physics-derived and solid. The multiplicative offset depends on your
-  bike's dial calibration and on the inertia anchor — Auto-calibrate
-  fits the first; the Power scale slider absorbs the second.
+- **Absolute scale depends on your unit, and the model can't infer it
+  from spindowns alone.** The *shape* of the correction (Wouterse
+  $\tau(\omega)$, saturating $\tau_{\max}(R)$) is physics-derived and
+  solid. The multiplicative offset is structurally underdetermined:
+  spindowns fit $\alpha$ from $I\,\dot\omega = -\tau$, so $\alpha$
+  scales linearly with whatever $I_{\text{crank}}$ we assume. The
+  geometric $I_{\text{crank}} \approx 9.34\ \text{kg}\,\text{m}^2$
+  carries ~20–30 % uncertainty (ring radii, gear-ratio measurement,
+  effective vs geometric inertia), so absolute output carries the same
+  uncertainty until pinned against ground truth. The Power scale
+  slider scales $\alpha$ and $I_{\text{crank}}$ together, giving a
+  clean linear absolute-scale knob — but pinning it requires an
+  external power meter on this bike.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm.
   Above the cap, the bridge falls back to CSC-derived cadence if the
   bike exposes CSC; otherwise it clamps and slightly underestimates
@@ -257,7 +271,10 @@ From your training app on a separate device, pair to **"IC Bike
 If your numbers feel off, open Settings → **Auto-calibrate** to fit the
 brake curve to your bike (5–10 minutes, on-device). If you have an
 external power meter, use the **Power scale** slider on the same screen
-to pin the absolute scale.
+to pin the absolute scale — it scales steady-state and acceleration
+response by the same factor, so you only ever set one number. Default
+is 80 %, fitted to the residual ~20 % steady-state overshoot we saw on
+the reference unit.
 
 Tests live in `bridge/test/` — `flutter test` should pass after any
 default changes.

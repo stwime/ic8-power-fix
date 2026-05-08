@@ -140,6 +140,51 @@ void main() {
       expect(p!, greaterThanOrEqualTo(0));
     });
 
+    test('powerScale scales steady AND KE by the same factor', () {
+      // Coupled scaling: steady term, residual drag, and KE term all scale
+      // linearly with powerScale, so total output is linear in powerScale
+      // without any cadence/R-shape distortion.
+      final cal1 = Calibration.defaults();
+      cal1.powerScale = 1.0;
+      final c1 = Corrector(cal1);
+      // Hold then ramp 60 → 90 rpm at +10 rpm/s, R=25.
+      double? p1;
+      for (int i = 0; i < 5; i++) {
+        c1.push(timestampS: i.toDouble(), resistance: 25, cadenceRpm: 60.0,
+            csCadenceAvailable: true, cadenceRpmFtms: 60.0);
+      }
+      for (int i = 0; i < 4; i++) {
+        p1 = c1.push(timestampS: 5.0 + i.toDouble(), resistance: 25,
+            cadenceRpm: 60.0 + 10.0 * (i + 1),
+            csCadenceAvailable: true, cadenceRpmFtms: 60.0 + 10.0 * (i + 1));
+      }
+      final pSteady1 = c1.lastSteadyW;
+      final pKe1 = c1.lastKeW;
+
+      final cal2 = Calibration.defaults();
+      cal2.powerScale = 0.5;
+      final c2 = Corrector(cal2);
+      double? p2;
+      for (int i = 0; i < 5; i++) {
+        c2.push(timestampS: i.toDouble(), resistance: 25, cadenceRpm: 60.0,
+            csCadenceAvailable: true, cadenceRpmFtms: 60.0);
+      }
+      for (int i = 0; i < 4; i++) {
+        p2 = c2.push(timestampS: 5.0 + i.toDouble(), resistance: 25,
+            cadenceRpm: 60.0 + 10.0 * (i + 1),
+            csCadenceAvailable: true, cadenceRpmFtms: 60.0 + 10.0 * (i + 1));
+      }
+      final pSteady2 = c2.lastSteadyW;
+      final pKe2 = c2.lastKeW;
+
+      // Both scale by 0.5 (within FP tolerance).
+      expect(pSteady2 / pSteady1, closeTo(0.5, 1e-6));
+      expect(pKe2 / pKe1, closeTo(0.5, 1e-6));
+      // And the sum scales by 0.5 too — i.e. the KE/steady ratio is
+      // preserved across powerScale changes.
+      expect(p2! / p1!, closeTo(0.5, 1e-6));
+    });
+
     test('live calibration change retunes power without restart', () {
       final cal = Calibration.defaults();
       final c = Corrector(cal);
