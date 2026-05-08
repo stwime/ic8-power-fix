@@ -67,11 +67,12 @@ $\text{cad}^{1.5}$, the physics gives $\text{cad}^2$ in the linear
 brake regime) and on $R$-scaling (the IC8's $R^{0.83}$ is a soft
 sub-linear growth, while the real eddy-brake's effective damping
 rises sharply through the middle of the dial before saturating at
-the high end — see the spin-down plot below). They cross near
-$R \approx 25$, $\text{cad} \approx 60$; below that the bridge reads
-lower than the bike, above it the bridge reads higher. The exact
-crossover depends on the absolute scale of your unit, which the
-**Power scale** slider lets you pin against an external reference.
+the high end — see the spin-down plot below). At the shipped 0.80
+default the crossover sits around $R \approx 45$ at moderate
+cadences; below that the bridge reads lower than the bike, above it
+the bridge reads higher. The exact crossover depends on the absolute
+scale of your unit, which the **Power scale** slider lets you pin
+against an external reference.
 
 ## The fix
 
@@ -164,17 +165,18 @@ one is available.
 
 ## Reality check: the model decomposes a sprint cleanly
 
-A BLE-logged spin-up at $R = 28$ — cadence 0 → 67 rpm in 8 seconds,
-then held steady for 8 more:
+A BLE-logged spin-up at $R = 28$ — cadence 0 → 67 rpm in ~4 seconds,
+then held steady for the rest of the window:
 
 ![Indoor surge-and-hold](docs/figures/indoor_surge.png)
 
 Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$,
-red area is the KE term $I\,\omega\,\frac{d\omega}{dt}$. KE adds 50–80 W during the
-spin-up, then collapses to ≈ 0 within 1–2 seconds of cadence holding,
-settling at the steady-state dissipation at cad 67. The same shape
-shows up on a 4iiii crank meter during an outdoor acceleration —
-different sensor, different system, same physics.
+red area is the KE term $I\,\omega\,\frac{d\omega}{dt}$. KE adds
+roughly 30–45 W during the spin-up, then collapses to ≈ 0 within 1–2
+seconds of cadence holding, settling at the steady-state dissipation
+at cad ≈ 67. The same shape shows up on a 4iiii crank meter during
+an outdoor acceleration — different sensor, different system, same
+physics.
 
 ## What the bridge does
 
@@ -251,6 +253,9 @@ analysis/aggregate_spindowns.py  merges curated bounds into one per-rev ω(t)
                                  dataset (data/calibration/all_spindowns.csv)
 analysis/fit_wouterse.py         strict-Wouterse 5-param fit on the curated
                                  dataset (one-shot trajectory ODE fit)
+analysis/plot_readme_figures.py  regenerates power_curves.png and
+                                 indoor_surge.png from the bridge defaults
+                                 + the canonical R=28 surge BLE log
 data/calibration/                BLE logs + crank videos used to fit defaults
 docs/figures/                    README plots
 ```
