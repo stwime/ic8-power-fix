@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent.parent
 FIG_DIR = ROOT / "docs" / "figures"
-HOLDING_CSV = ROOT / "data/calibration/holding_a_few_seconds_at_lots_of_R_values.csv"
+SPRINT_CSV = ROOT / "data/calibration/spin_downs_apr29.csv"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 ALPHA = 500.0
@@ -95,9 +95,9 @@ def plot_power_curves():
     print(f"Wrote {out}")
 
 
-def _read_holding_window(t0: float, t1: float):
+def _read_window(path: Path, t0: float, t1: float):
     t, cad, r = [], [], []
-    with open(HOLDING_CSV) as f:
+    with open(path) as f:
         reader = csv.DictReader(f)
         for row in reader:
             ts = float(row["timestamp_s"])
@@ -110,9 +110,11 @@ def _read_holding_window(t0: float, t1: float):
 
 
 def plot_indoor_surge():
-    # Window covers: rider stops, R settles at 28 (~t=85), spin-up to ~67
-    # rpm, then ~10s of approximate steady at 65–72 rpm before next push.
-    t, cad, r = _read_holding_window(84.0, 102.5)
+    # R=25 sprint at t≈35–50. Cadence climbs 24 → 125 rpm in ~8 s,
+    # holds at the FTMS 125-rpm cap for ~2 s, then decelerates as the
+    # rider stops pushing. R is cleanly 25 throughout. Peak KE pulse
+    # during the steep ramp is ~150 W on top of ~270 W steady.
+    t, cad, r = _read_window(SPRINT_CSV, 33.0, 50.5)
     omega = cad * np.pi / 30.0
 
     # Median filter on R to mirror corrector's 5-sample window.
@@ -157,7 +159,7 @@ def plot_indoor_surge():
     ax.plot(t_rel, p_total, "-", color="#222", lw=1.8, label="Bridge total")
     ax.set_ylabel("Power (W)")
     ax.set_title(
-        "R=28 spin-up decomposed into steady and KE terms\n"
+        "R=25 sprint decomposed into steady and KE terms\n"
         f"powerScale = {POWER_SCALE:.2f}"
     )
     ax.legend(loc="upper right", frameon=False)

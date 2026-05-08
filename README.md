@@ -169,18 +169,20 @@ external power meter when one is available.
 
 ## Reality check: the model decomposes a sprint cleanly
 
-A BLE-logged spin-up at $R = 28$, cadence 0 to 67 rpm in ~4 seconds,
-then held steady for the rest of the window:
+A BLE-logged sprint at $R = 25$. Cadence climbs from 24 to 118 rpm
+over ~10 seconds (briefly hitting the FTMS 125-rpm cap), then the
+rider stops pushing and the flywheel coasts back down to ~50 rpm:
 
-![Indoor surge-and-hold](docs/figures/indoor_surge.png)
+![Indoor sprint](docs/figures/indoor_surge.png)
 
 Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$,
 red area is the KE term $I\,\omega\,\frac{d\omega}{dt}$. KE adds
-roughly 30–45 W during the spin-up, then collapses to ≈ 0 within
-1–2 seconds of cadence holding, settling at the steady-state
-dissipation at cad ≈ 67. The same shape shows up on a 4iiii crank
-meter during an outdoor acceleration: different sensor, different
-system, same physics.
+~135 W on top of the ~300 W steady at the peak of the ramp, then
+flips negative during the coastdown so total power drops to near
+zero (the rider has stopped pushing, the flywheel is bleeding off
+its kinetic energy into the brake). The same shape shows up on a
+4iiii crank meter during an outdoor acceleration: different sensor,
+different system, same physics.
 
 ## What the bridge does
 
