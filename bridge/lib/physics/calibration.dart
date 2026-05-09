@@ -36,10 +36,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// aren't exposed in auto-calibration. Only (α, β) are fit per bike.
 /// See [Coastdown.fitBrake].
 ///
-/// [defaultICrank] is the direct flywheel-geometry calculation:
-/// I_flywheel = 0.461 kg·m² (46 cm dia, 18 kg, two rings r=13–18 cm at
-/// 2.5× thickness) and gear ratio g = 4.5 (measured) gives
-/// I_crank = g²·I_flywheel ≈ 9.34 kg·m².
+/// [defaultICrank] from flywheel geometry plus gear leverage. The IC8's
+/// 18 kg, 46 cm-diameter aluminum flywheel has its mass concentrated
+/// at r_eff ≈ 14.3 cm (about 62% of the disc radius, observed visually
+/// and confirmed by the perceived-effort calibration), giving
+/// I_flywheel = m·r_eff² ≈ 0.369 kg·m². With the video-confirmed
+/// flywheel-to-crank gear ratio g = 4.5, the effective inertia at the
+/// crank is I_crank = g²·I_flywheel ≈ 7.47 kg·m².
 ///
 /// [powerScale] is a coupled absolute-scale knob: it multiplies α and
 /// I_crank by the same factor, so the eddy steady term, the residual
@@ -49,39 +52,40 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// powerScale-invariant because α and I cancel — the bike's physical
 /// coastdown rate doesn't depend on what the bridge displays.
 ///
-/// The default 0.80 absorbs the residual ~20% steady-state overshoot
-/// observed against perceived effort at R≈31, cad≈90 with the geometry
-/// I_crank = 9.34 kg·m². Tune against an external power meter when one
-/// is available.
+/// The default 1.00 reflects the geometry-anchored I_crank = 7.47.
+/// Cadence has been verified accurate against a metronome, gear ratio
+/// against video, and the flywheel mass distribution against visual
+/// inspection of the disc — so there is no longer a known systematic
+/// offset for the slider to absorb. Tune against an external power
+/// meter when available; nothing in the model claims absolute scale
+/// to better than ~10% without one.
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on the hand-curated
   // video-only spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  static const double defaultAlpha = 500.0;     // N·m — peak torque amplitude
+  static const double defaultAlpha = 400.0;     // N·m — peak torque amplitude
   static const double defaultBeta = 0.0343;     // 1/s — residual drag at R=0
   static const double defaultRh = 167.64;       // Hill midpoint
   static const double defaultP = 1.07;          // Hill sharpness
   static const double defaultKappa = 0.1465;    // s/rad — 1/ω_c at saturation
-  static const double defaultICrank = 9.34;     // kg·m² (effective, at crank)
-  static const double defaultPowerScale = 0.80; // coupled α + I_crank scale
+  static const double defaultICrank = 7.47;     // kg·m² (effective, at crank)
+  static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
   /// I_crank applied at every output evaluation. 0.5–2.0 covers the range
   /// of unit-to-unit firmware-calibration spread we'd plausibly see across
-  /// IC8s on top of the 0.80 default.
+  /// IC8s on top of the 1.00 default.
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // Bumped key suffix so a pre-Wouterse stored α/β (different units, ~10⁴
-  // smaller) doesn't load and produce nonsense. resetToDefaults() also
-  // wipes the old keys so they don't linger.
-  static const String _keyAlpha = 'cal.alphaW';
+  // v3 suffixes mark the inertia-rebase: I_crank moved from 9.34 to 7.47
+  // (geometry refit at r_eff = 14.3 cm) and α from 500 to 400 (refit at
+  // the new I), with powerScale defaulting to 1.0 instead of 0.80.
+  // Loading any stored value from before this change under the new
+  // defaults would over- or under-shoot by ~25%, so we wipe and reset.
+  static const String _keyAlpha = 'cal.alpha.v3';
   static const String _keyBeta = 'cal.betaW';
-  static const String _keyICrank = 'cal.iCrank';
-  // v2 suffix: powerScale switched semantics from α-only multiplier to
-  // coupled α + I_crank multiplier, with default 0.80. Old stored values
-  // had α-only meaning and a 1.0 default — loading them under the new
-  // semantics would silently change behaviour.
-  static const String _keyPowerScale = 'cal.powerScale.v2';
+  static const String _keyICrank = 'cal.iCrank.v3';
+  static const String _keyPowerScale = 'cal.powerScale.v3';
 
   double alpha;
   double beta;
@@ -207,9 +211,12 @@ class Calibration {
     // Drop any stored keys from prior calibration models so a future
     // Calibration.load() doesn't see orphan values.
     await prefs.remove('cal.alpha');
+    await prefs.remove('cal.alphaW');
     await prefs.remove('cal.beta');
+    await prefs.remove('cal.iCrank');
     await prefs.remove('cal.rcDial');
     await prefs.remove('cal.powerScale');
+    await prefs.remove('cal.powerScale.v2');
   }
 
   bool get isAtDefaults =>

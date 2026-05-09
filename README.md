@@ -11,13 +11,7 @@ virtual FTMS power meter your training apps can pair to.
 ## Why use this
 
 - **Physics-derived correction, not a flat scale factor.** The model
-  is Wouterse permanent-magnet eddy-brake dynamics:
-  $P = \tau_{\text{brake}}(R,\omega)\,\omega + I\,\omega\,\frac{d\omega}{dt}$,
-  with the bell-curve $\tau(\omega)$ shape that classical eddy-brake
-  theory predicts for a conducting disc in a stationary magnetic
-  field. It responds correctly to transients (sprints, coastdowns,
-  low-cadence grinding) instead of just shifting every number by a
-  percentage.
+  is Wouterse permanent-magnet eddy-brake dynamics, $P = \tau_{\text{brake}}(R,\omega)\,\omega + I\,\omega\,\dot\omega$, with the bell-curve $\tau(\omega)$ shape that classical eddy-brake theory predicts for a conducting disc in a stationary magnetic field. It responds correctly to transients (sprints, coastdowns, low-cadence grinding) instead of just shifting every number by a percentage.
 - **Calibrates to your specific bike.** Auto-calibrate (Settings →
   Auto-calibrate) fits the brake curve on-device in 5–10 minutes. If
   you have an outdoor power meter, the Power scale slider pins the
@@ -51,12 +45,8 @@ $$P_{\text{IC8}} \approx 0.019 \cdot R^{0.83} \cdot \text{cad}^{1.5}$$
 
 Two issues:
 
-1. **The cadence exponent is wrong.** Real eddy-current physics gives
-   $P \propto \omega^2$, not $\text{cad}^{1.5}$.
-2. **The absolute scale isn't fixed.** Whether the bike reads high,
-   low, or on the money depends on the unit, the dial calibration,
-   and the operating point. That's why forums are confusing. There's
-   no single offset that fits every rider's experience.
+1. **The cadence exponent is wrong.** Real eddy-current physics gives $P \propto \omega^2$, not $\text{cad}^{1.5}$.
+2. **The absolute scale isn't fixed.** Whether the bike reads high, low, or on the money depends on the unit, the dial calibration, and the operating point. That's why forums are confusing. There's no single offset that fits every rider's experience.
 
 The *shape* of the gap is consistent though, even when the magnitude
 isn't. Dashed lines are what the bike broadcasts, solid lines are
@@ -64,17 +54,7 @@ what the bridge re-broadcasts:
 
 ![IC8 vs corrected power curves](docs/figures/power_curves.png)
 
-The two curves disagree both on cadence-scaling (IC8 uses
-$\text{cad}^{1.5}$, the physics gives $\text{cad}^2$ in the linear
-brake regime) and on $R$-scaling. The IC8's $R^{0.83}$ is a soft
-sub-linear growth, while the real eddy-brake's effective damping
-rises sharply through the middle of the dial before saturating at
-the high end (see the spin-down plot below). At the shipped 0.80
-default the crossover sits around $R \approx 45$ at moderate
-cadences. Below that the bridge reads lower than the bike, above it
-the bridge reads higher. The exact crossover depends on the absolute
-scale of your unit, which the **Power scale** slider lets you pin
-against an external reference.
+The two curves disagree both on cadence-scaling (IC8 uses $\text{cad}^{1.5}$, the physics gives $\text{cad}^2$ in the linear brake regime) and on $R$-scaling. The IC8's $R^{0.83}$ is a soft sub-linear growth, while the real eddy-brake's effective damping rises sharply through the middle of the dial before saturating at the high end (see the spin-down plot below). The bridge and the IC8 cross around $R \approx 45$ at moderate cadences. Below that the bridge reads lower than the bike, above it the bridge reads higher. The exact crossover depends on the absolute scale of your unit, which the **Power scale** slider lets you pin against an external reference.
 
 ## The fix
 
@@ -85,22 +65,18 @@ as a bell curve in $\omega$:
 
 $$\tau_{\text{brake}}(R,\omega) = \tau_{\max}(R) \cdot \frac{2(\omega/\omega_c(R))}{1 + (\omega/\omega_c(R))^2}$$
 
-with peak torque $\tau_{\max}(R)$ and critical angular speed
-$\omega_c(R)$. Below $\omega_c$ the torque is linear in $\omega$.
-Above $\omega_c$ it falls because eddy currents create an opposing
-reaction field that cancels part of the source flux. Steady-state
-brake power is
+with peak torque $\tau_{\max}(R)$ and critical angular speed $\omega_c(R)$. Below $\omega_c$ the torque is linear in $\omega$. Above $\omega_c$ it falls because eddy currents create an opposing reaction field that cancels part of the source flux. Steady-state brake power is
 
 $$P_{\text{steady}} = \tau_{\text{brake}}(R,\omega) \cdot \omega$$
 
 There's also a kinetic-energy term that matters during accelerations
 and decelerations:
 
-$$P_{\text{KE}} = I\,\omega\,\frac{d\omega}{dt}$$
+$$P_{\text{KE}} = I\,\omega\,\dot\omega$$
 
 Total rider input is the sum:
 
-$$P_{\text{corrected}} = \tau_{\text{brake}}(R,\omega) \cdot \omega + I\,\omega\,\frac{d\omega}{dt}$$
+$$P_{\text{corrected}} = \tau_{\text{brake}}(R,\omega) \cdot \omega + I\,\omega\,\dot\omega$$
 
 At steady cadence the second term is zero. During a sprint launch it
 adds the work to spin up the flywheel. During a coastdown it
@@ -108,64 +84,28 @@ subtracts and the total goes to zero (the rider isn't doing work).
 
 ### Where the constants come from
 
-**$\tau_{\max}(R)$ and $\omega_c(R)$ from spin-downs.** Both
-R-functions trace a single underlying $B^2(R)$ curve via the
-strict-Wouterse coupling $\tau_{\max} \propto B^2$,
-$\omega_c \propto 1/B^2$. We parameterize $B^2(R)$ with a Hill curve
-so the model is smooth and continuous (zero at $R = 0$, saturating
-at high $R$):
+**$\tau_{\max}(R)$ and $\omega_c(R)$ from spin-downs.** Both R-functions trace a single underlying $B^2(R)$ curve via the strict-Wouterse coupling $\tau_{\max} \propto B^2$ and $\omega_c \propto 1/B^2$. We parameterize $B^2(R)$ with a Hill curve so the model is smooth and continuous (zero at $R = 0$, saturating at high $R$):
 
 $$H(R) = \frac{R^p}{R^p + R_h^p}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \frac{1}{\omega_c(R)} = \kappa\,H(R)$$
 
-Fit by integrating the spindown ODE
-$I\,\dot\omega = -\tau_{\text{brake}}(R,\omega) - I\,\beta\,\omega$
-against the actual $\omega(t)$ of every spindown, *not* a per-segment
-log-linear $\hat\lambda$ fit (which would be biased wherever the bell
-curve bites). Hand-curated dataset of 42 video-tracked spindowns
-spanning $R = 0$ to 93 (`analysis/fit_wouterse.py`).
+Fit by integrating the spindown ODE $I\,\dot\omega = -\tau_{\text{brake}}(R,\omega) - I\,\beta\,\omega$ against the actual $\omega(t)$ of every spindown — *not* a per-segment log-linear $\hat\lambda$ fit (which would be biased wherever the bell curve bites). Hand-curated dataset of 42 video-tracked spindowns spanning $R = 0$ to $93$ (`analysis/fit_wouterse.py`).
 
-- $\alpha = 500$ N·m, peak torque amplitude (per-bike).
-- $\beta = 0.0343$ s$^{-1}$, residual drag at $R = 0$ (per-bike).
+- $\alpha = 400$ N·m, peak torque amplitude (per-bike).
+- $\beta = 0.0343$ per second, residual drag at $R = 0$ (per-bike).
 - $\kappa = 0.147$ s/rad, $1/\omega_c$ at saturation (geometry).
 - $R_h = 167.6$, Hill midpoint (geometry × bike-firmware mapping).
 - $p = 1.07$, Hill sharpness (geometry × bike-firmware mapping).
-- $\alpha/\kappa \approx 3.4$ kW, the $\tau_{\max}\cdot\omega_c$
-  invariant set by disc conductivity × thickness × pole-area ×
-  radius².
+- $\alpha/\kappa \approx 2.7$ kW, the $\tau_{\max} \cdot \omega_c$ invariant set by disc conductivity × thickness × pole-area × radius².
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-In our spindown $\omega$ window the trajectories are mostly in the
-linear regime ($\omega < \omega_c$), so the bell-curve term
-contributes modestly except at the highest $R$. The model still
-beats pure linear damping for two reasons: (a) it's the correct
-physics, smoothly extrapolating into regions we can't sample, and
-(b) it bounds the high-$R$ power at the strict Wouterse asymptote
-$2\alpha/\kappa$ instead of running away as $R^p$ would.
+In our spindown $\omega$ window the trajectories are mostly in the linear regime ($\omega < \omega_c$), so the bell-curve term contributes modestly except at the highest $R$. The model still beats pure linear damping for two reasons: (a) it's the correct physics, smoothly extrapolating into regions we can't sample, and (b) it bounds the high-$R$ power at the strict Wouterse asymptote $2\alpha/\kappa$ instead of running away as $R^p$ would.
 
-$R_h$, $p$, and $\kappa$ are held fixed across bikes because they
-combine the eddy-brake gap-vs-dial physics with whatever non-linear
-mapping the IC8's firmware applies between dial position and
-physical brake state. Those layers are inseparable from spindown
-data alone, so they ship as defaults. Only $(\alpha, \beta)$ are fit
-per bike by Auto-calibrate, against the linear-regime design row
-$\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$
-that the Wouterse model collapses to at user-coastdown cadences.
+$R_h$, $p$, and $\kappa$ are held fixed across bikes because they combine the eddy-brake gap-vs-dial physics with whatever non-linear mapping the IC8's firmware applies between dial position and physical brake state. Those layers are inseparable from spindown data alone, so they ship as defaults. Only $(\alpha, \beta)$ are fit per bike by Auto-calibrate, against the linear-regime design row $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$ that the Wouterse model collapses to at user-coastdown cadences.
 
-**$I$ from direct flywheel geometry.** $I_{\text{flywheel}} = 0.461$
-kg·m² from the IC8's 46 cm diameter, 18 kg perimeter-weighted
-aluminum flywheel (two annular rings $r = 13$ to $18$ cm at
-$\approx 2.5\times$ thickness). With measured flywheel-to-crank gear
-ratio $g = 4.5$, the effective inertia at the crank is
-$I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} \approx 9.34$
-kg·m². The in-app **Power scale** slider scales $\alpha$ and
-$I_{\text{crank}}$ together by the same factor, so steady-state,
-residual drag, and the KE term all scale linearly in lockstep. It's
-a clean absolute-scale knob that doesn't distort cadence or R shape.
-Default is 0.80, which lands ~20% under the IC8's own broadcast at
-$R \approx 31$, $\text{cad} \approx 90$, matching observed
-steady-state overshoot against perceived effort. Tune against an
-external power meter when one is available.
+**$I$ from flywheel geometry plus gear leverage.** The IC8's 18 kg, 46 cm-diameter aluminum flywheel has its mass concentrated at $r_{\text{eff}} \approx 14.3$ cm (about 62% of the disc radius, observed by inspecting where the bulk is and confirmed by the perceived-effort calibration sliding to 1.0). That gives $I_{\text{flywheel}} = m\,r_{\text{eff}}^2 \approx 0.37$ kg·m². With the video-confirmed flywheel-to-crank gear ratio $g = 4.5$, the effective inertia at the crank is $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} \approx 7.47$ kg·m².
+
+The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together by the same factor, so steady-state, residual drag, and the KE term all scale linearly in lockstep. It's a clean absolute-scale knob that doesn't distort cadence or R shape. Default is 1.0 — broadcast cadence has been verified accurate against a metronome, gear ratio against video, and mass distribution against the visible flywheel, so there is no longer a known systematic offset for the slider to absorb. Tune against an external power meter when one is available.
 
 ## Reality check: the model decomposes a sprint cleanly
 
@@ -175,14 +115,7 @@ rider stops pushing and the flywheel coasts back down to ~50 rpm:
 
 ![Indoor sprint](docs/figures/indoor_surge.png)
 
-Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$,
-red area is the KE term $I\,\omega\,\frac{d\omega}{dt}$. KE adds
-~135 W on top of the ~300 W steady at the peak of the ramp, then
-flips negative during the coastdown so total power drops to near
-zero (the rider has stopped pushing, the flywheel is bleeding off
-its kinetic energy into the brake). The same shape shows up on a
-4iiii crank meter during an outdoor acceleration: different sensor,
-different system, same physics.
+Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake). The same shape shows up on a 4iiii crank meter during an outdoor acceleration: different sensor, different system, same physics.
 
 ## What the bridge does
 
@@ -210,34 +143,9 @@ mode isn't possible regardless of what you pair it to.
 
 ## Limitations
 
-- **Absolute scale depends on your unit, and the model can't infer
-  it from spindowns alone.** The *shape* of the correction (Wouterse
-  $\tau(\omega)$, saturating $\tau_{\max}(R)$) is physics-derived
-  and solid. The multiplicative offset is structurally
-  underdetermined: spindowns fit $\alpha$ from
-  $I\,\dot\omega = -\tau$, so $\alpha$ scales linearly with whatever
-  $I_{\text{crank}}$ we assume. The geometric
-  $I_{\text{crank}} \approx 9.34$ kg·m² carries ~20–30%
-  uncertainty (ring radii, gear-ratio measurement, effective vs
-  geometric inertia), so absolute output carries the same
-  uncertainty until pinned against ground truth. The Power scale
-  slider scales $\alpha$ and $I_{\text{crank}}$ together, giving a
-  clean linear absolute-scale knob, but pinning it requires an
-  external power meter on this bike.
-- **High-cadence cap.** The IC8 saturates broadcast cadence at 125
-  rpm. Above the cap, the bridge falls back to CSC-derived cadence
-  if the bike exposes CSC. Otherwise it clamps and slightly
-  underestimates sprint power.
-- **Bell-curve onset $\omega_c(R)$ is anchored by the Wouterse
-  coupling $\tau_{\max}\cdot\omega_c = \alpha/\kappa$, not by
-  spindowns reaching the regime.** Our spindowns sit mostly below
-  $\omega_c$ in the linear-damping range, so the data anchors
-  $\tau_{\max}(R)$ cleanly but the bell-curve $\omega_c(R)$ is
-  constrained by physics (strict $\tau_{\max}\propto B^2$,
-  $\omega_c\propto 1/B^2$) more than by trajectory shape.
-  Disambiguating $\omega_c(R)$ at high $R$ would need either
-  independent $B(R)$ measurement or coastdowns from much higher
-  peak cadence, neither of which we have for the calibration set.
+- **Absolute scale depends on your unit, and the model can't infer it from spindowns alone.** The *shape* of the correction (Wouterse $\tau(\omega)$, saturating $\tau_{\max}(R)$) is physics-derived and solid. The multiplicative offset is structurally underdetermined: spindowns fit $\alpha$ from $I\,\dot\omega = -\tau$, so $\alpha$ scales linearly with whatever $I_{\text{crank}}$ we assume. The shipped $I_{\text{crank}} \approx 7.47$ kg·m² is anchored to a visually-estimated mass concentration on the reference unit; another IC8 with different mass distribution or manufacturing tolerances could land 10% off. The Power scale slider scales $\alpha$ and $I_{\text{crank}}$ together to absorb that, but pinning it requires an external power meter on this bike.
+- **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence if the bike exposes CSC. Otherwise it clamps and slightly underestimates sprint power.
+- **Bell-curve onset $\omega_c(R)$ is anchored by the Wouterse coupling $\tau_{\max} \cdot \omega_c = \alpha/\kappa$, not by spindowns reaching the regime.** Our spindowns sit mostly below $\omega_c$ in the linear-damping range, so the data anchors $\tau_{\max}(R)$ cleanly but the bell-curve $\omega_c(R)$ is constrained by physics (strict $\tau_{\max} \propto B^2$, $\omega_c \propto 1/B^2$) more than by trajectory shape. Disambiguating $\omega_c(R)$ at high $R$ would need either independent $B(R)$ measurement or coastdowns from much higher peak cadence, neither of which we have for the calibration set.
 
 ## Repository layout
 
@@ -263,7 +171,7 @@ analysis/fit_wouterse.py         strict-Wouterse 5-param fit on the curated
                                  dataset (one-shot trajectory ODE fit)
 analysis/plot_readme_figures.py  regenerates power_curves.png and
                                  indoor_surge.png from the bridge defaults
-                                 + the canonical R=28 surge BLE log
+                                 + the canonical R=25 sprint BLE log
 data/calibration/                BLE logs + crank videos used to fit defaults
 docs/figures/                    README plots
 ```
@@ -286,8 +194,8 @@ the brake curve to your bike (5–10 minutes, on-device). If you have
 an external power meter, use the **Power scale** slider on the same
 screen to pin the absolute scale. It scales steady-state and
 acceleration response by the same factor, so you only ever set one
-number. Default is 80%, fitted to the residual ~20% steady-state
-overshoot we saw on the reference unit.
+number. Default is 100% — the shipped constants already absorb the
+known offsets on the reference unit.
 
 Tests live in `bridge/test/`. `flutter test` should pass after any
 default changes.

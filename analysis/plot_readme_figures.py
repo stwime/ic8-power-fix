@@ -28,13 +28,13 @@ FIG_DIR = ROOT / "docs" / "figures"
 SPRINT_CSV = ROOT / "data/calibration/spin_downs_apr29.csv"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
-ALPHA = 500.0
+ALPHA = 400.0
 BETA = 0.0343
 RH = 167.64
 P_EXP = 1.07
 KAPPA = 0.1465
-I_CRANK = 9.34
-POWER_SCALE = 0.80
+I_CRANK = 7.47
+POWER_SCALE = 1.00
 
 # IC8's own broadcast formula (firmware fit). See README "Why the bike's
 # numbers can't be trusted".

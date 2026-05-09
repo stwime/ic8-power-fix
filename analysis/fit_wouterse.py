@@ -70,7 +70,7 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 9.34  # kg·m² (effective, at the crank). From defaultICrank.
+I_CRANK = 7.47  # kg·m² (effective, at the crank). From defaultICrank.
 
 
 # ---------------------------------------------------------------------------
