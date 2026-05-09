@@ -69,14 +69,20 @@ def plot_power_curves():
     cad = np.linspace(30, 110, 240)
     omega = cad * np.pi / 30.0
     rs = [10, 20, 30, 45, 60]
+    # Distinct categorical colors that also walk cool-to-warm so higher R
+    # reads as "harder" without sacrificing legibility between adjacent
+    # curves. Picked for readability under both light and dark backgrounds.
+    colors = ["#1f77b4",  # blue        (R=10)
+              "#17becf",  # cyan        (R=20)
+              "#2ca02c",  # green       (R=30)
+              "#ff7f0e",  # orange      (R=45)
+              "#d62728"]  # red         (R=60)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    cmap = plt.get_cmap("viridis")
-    for i, r in enumerate(rs):
-        color = cmap(0.10 + 0.78 * i / max(len(rs) - 1, 1))
+    for r, color in zip(rs, colors):
         p_ic8 = ic8_broadcast(r, cad)
         p_br = bridge_steady(r, omega)
-        ax.plot(cad, p_ic8, "--", color=color, lw=1.6, alpha=0.9)
-        ax.plot(cad, p_br, "-", color=color, lw=2.0, label=f"R = {r}")
+        ax.plot(cad, p_ic8, "--", color=color, lw=1.6, alpha=0.85)
+        ax.plot(cad, p_br, "-", color=color, lw=2.2, label=f"R = {r}")
 
     ax.set_xlabel("Cadence (rpm)")
     ax.set_ylabel("Power (W)")
