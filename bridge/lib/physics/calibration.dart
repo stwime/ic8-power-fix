@@ -41,18 +41,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 ///   1. [defaultICrank] from flywheel geometry. 18 kg flywheel (manufacturer
 ///      spec), 0.5 cm thick Al disc at 23 cm OD (= 2.24 kg by π·R²·t·ρ_Al),
-///      iron belt at R = 12–16 cm (= 15.76 kg by mass conservation,
-///      ~2.85 cm thick on each side of the disc by ρ_Fe = 7870 kg/m³ —
-///      consistent with visual inspection of 2–3 cm protrusion each side).
+///      iron belt at R = 12–17 cm (= 15.76 kg by mass conservation). The
+///      belt is split across both faces of the disc with the two halves
+///      sitting at slightly different radial positions — one side 12–16 cm,
+///      the other 13–17 cm by visual inspection — so the effective belt
+///      inertia is the mean of the two annuli.
 ///        I_Al_disc  = ½·m·R²       = 0.059 kg·m²
-///        I_belt     = m·r_eff²      = 0.315 kg·m²   (r_eff² = 0.0200)
-///        I_flywheel = 0.374 kg·m²
-///        I_crank    = g²·I_flywheel = 7.58 kg·m²    (g = 4.5)
+///        I_belt     = m·r_eff²      = 0.339 kg·m²   (r_eff² ≈ 0.0214)
+///        I_flywheel = 0.398 kg·m²
+///        I_crank    = g²·I_flywheel = 8.0  kg·m²    (g = 4.5)
 ///
 ///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
 ///      Under strict Wouterse, the asymptotic peak brake power at any
-///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.165 and
-///      α/κ = 1001 W — matching the 1000 W rating to <1%. The saturation
+///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.164 and
+///      α/κ = 1006 W — matching the 1000 W rating to <1%. The saturation
 ///      bell-curve isn't directly observed in our coastdowns (which sit
 ///      in the linear-damping regime ω << ω_c), but it's a real physical
 ///      constraint of permanent-magnet eddy brakes — finite magnetic
@@ -60,7 +62,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///      marketing spec is our anchor for where that ceiling sits.
 ///
 ///   3. Hill shape (R_h, p), κ, and β from a global fit on 46 video-
-///      tracked spindowns spanning R = 0 to 93. RSS = 0.040 across
+///      tracked spindowns spanning R = 0 to 93. RSS = 0.0405 across
 ///      51792 samples.
 ///
 /// All three are mutually consistent — the data, the geometry, and the
@@ -81,15 +83,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1001 W).
-  // I_crank pinned to 7.58 (anchored to flywheel geometry: 18 kg with
-  // iron belt at R = 12–16 cm, ~2.85 cm thick each side).
+  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1006 W).
+  // I_crank pinned to 8.0 (anchored to flywheel geometry: 18 kg with
+  // iron belt split across both faces of the disc, one side 12–16 cm
+  // and the other 13–17 cm).
   static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0384;     // 1/s — residual drag at R=0
-  static const double defaultRh = 87.608;       // Hill midpoint
-  static const double defaultP = 1.196;         // Hill sharpness
-  static const double defaultKappa = 0.1649;    // s/rad — 1/ω_c at saturation
-  static const double defaultICrank = 7.58;     // kg·m² (effective, at crank)
+  static const double defaultBeta = 0.0386;     // 1/s — residual drag at R=0
+  static const double defaultRh = 83.189;       // Hill midpoint
+  static const double defaultP = 1.214;         // Hill sharpness
+  static const double defaultKappa = 0.1639;    // s/rad — 1/ω_c at saturation
+  static const double defaultICrank = 8.0;      // kg·m² (effective, at crank)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
@@ -99,16 +102,15 @@ class Calibration {
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // v4 suffixes mark the full physics-anchored rebase: I_crank from
-  // belt-geometry derivation (7.47 → 7.58), α from marketing 1000 W spec
-  // (500 → 165), and Hill shape refit at the new (α, I) anchors. The
-  // brake torque coefficient (2ακ/I) changed enough that loading any
-  // stored v3 values under the new defaults would over- or under-shoot
-  // by ~30%, so we wipe and reset.
-  static const String _keyAlpha = 'cal.alpha.v4';
-  static const String _keyBeta = 'cal.betaW.v4';
-  static const String _keyICrank = 'cal.iCrank.v4';
-  static const String _keyPowerScale = 'cal.powerScale.v4';
+  // v5 marks the belt-geometry refinement (7.58 → 8.0): the iron belt
+  // sits at different radial positions on each face of the disc, raising
+  // the effective inertia by ~6%. The Hill shape (R_h, p) and (κ, β) were
+  // refit at the new I_crank, so loading v4 (α, β, I_crank) under the v5
+  // R_h/p/κ defaults would mismatch the torque shape — wipe and reset.
+  static const String _keyAlpha = 'cal.alpha.v5';
+  static const String _keyBeta = 'cal.betaW.v5';
+  static const String _keyICrank = 'cal.iCrank.v5';
+  static const String _keyPowerScale = 'cal.powerScale.v5';
 
   double alpha;
   double beta;
@@ -244,6 +246,10 @@ class Calibration {
     await prefs.remove('cal.alpha.v3');
     await prefs.remove('cal.iCrank.v3');
     await prefs.remove('cal.powerScale.v3');
+    await prefs.remove('cal.alpha.v4');
+    await prefs.remove('cal.betaW.v4');
+    await prefs.remove('cal.iCrank.v4');
+    await prefs.remove('cal.powerScale.v4');
   }
 
   bool get isAtDefaults =>

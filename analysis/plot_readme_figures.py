@@ -36,11 +36,11 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 ALPHA = 165.0
-BETA = 0.0384
-RH = 87.608
-P_EXP = 1.196
-KAPPA = 0.1649
-I_CRANK = 7.58
+BETA = 0.0386
+RH = 83.189
+P_EXP = 1.214
+KAPPA = 0.1639
+I_CRANK = 8.0
 POWER_SCALE = 1.00
 
 # IC8's own broadcast formula (firmware fit). See README "Why the bike's
