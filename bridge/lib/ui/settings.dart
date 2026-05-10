@@ -27,7 +27,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   StreamSubscription? _sampleSub;
-  IC8Sample? _last;
+  final ValueNotifier<IC8Sample?> _lastSample = ValueNotifier(null);
   late final TextEditingController _nameCtrl;
   late final TextEditingController _alphaCtrl;
   late final TextEditingController _betaCtrl;
@@ -40,13 +40,14 @@ class _SettingsPageState extends State<SettingsPage> {
     _alphaCtrl = TextEditingController(text: cal.alpha.toStringAsFixed(4));
     _betaCtrl = TextEditingController(text: cal.beta.toStringAsFixed(4));
     _sampleSub = widget.central.samples.listen((s) {
-      if (mounted) setState(() => _last = s);
+      _lastSample.value = s;
     });
   }
 
   @override
   void dispose() {
     _sampleSub?.cancel();
+    _lastSample.dispose();
     _nameCtrl.dispose();
     _alphaCtrl.dispose();
     _betaCtrl.dispose();
@@ -121,7 +122,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final cal = widget.calibration;
-    final pwr = (_last?.correctedW ?? 0).round();
 
     return Scaffold(
       appBar: AppBar(
@@ -138,24 +138,30 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           _section('Power preview'),
-          Card(child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(children: [
-              const Icon(Icons.bolt, size: 32),
-              const SizedBox(width: 12),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('$pwr W',
-                      style: Theme.of(context).textTheme.headlineMedium),
-                  Text(_last == null
-                      ? 'Connect to your bike to see your live power here'
-                      : 'Live power — updates as you adjust the slider',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-              )),
-            ]),
-          )),
+          ValueListenableBuilder<IC8Sample?>(
+            valueListenable: _lastSample,
+            builder: (context, s, _) {
+              final pwr = (s?.correctedW ?? 0).round();
+              return Card(child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  const Icon(Icons.bolt, size: 32),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$pwr W',
+                          style: Theme.of(context).textTheme.headlineMedium),
+                      Text(s == null
+                          ? 'Connect to your bike to see your live power here'
+                          : 'Live power — updates as you adjust the slider',
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  )),
+                ]),
+              ));
+            },
+          ),
 
           const SizedBox(height: 16),
           _section('Power scale'),
@@ -239,14 +245,11 @@ class _SettingsPageState extends State<SettingsPage> {
           TextField(
             controller: _nameCtrl,
             maxLength: AppPrefs.proxyNameMaxLen,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
+            onSubmitted: (_) => _saveProxyName(),
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
               hintText: AppPrefs.defaultProxyName,
-              suffixIcon: IconButton(
-                tooltip: 'Save',
-                icon: const Icon(Icons.save),
-                onPressed: _saveProxyName,
-              ),
             ),
           ),
         ],
@@ -313,13 +316,13 @@ class _SettingsPageState extends State<SettingsPage> {
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       SizedBox(
         width: 96,
-        child: Text(label,
-            style: const TextStyle(fontFamily: 'monospace')),
+        child: Text(label),
       ),
       Expanded(child: TextField(
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(fontFamily: 'monospace'),
+        onSubmitted: (_) => onSave(),
+        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
         decoration: InputDecoration(
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -327,11 +330,6 @@ class _SettingsPageState extends State<SettingsPage> {
           helperText: isDefault
               ? 'default'
               : 'default ${defaultValue.toStringAsFixed(frac)}',
-          suffixIcon: IconButton(
-            tooltip: 'Save',
-            icon: const Icon(Icons.save),
-            onPressed: onSave,
-          ),
         ),
       )),
     ]);

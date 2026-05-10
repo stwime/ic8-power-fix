@@ -25,7 +25,7 @@ class _HomePageState extends State<HomePage> {
 
   final List<({Peripheral peripheral, String name, int rssi})> _found = [];
   Peripheral? _connected;
-  IC8Sample? _last;
+  final ValueNotifier<IC8Sample?> _lastSample = ValueNotifier(null);
   String _status = 'Ready';
   _StatusTone _tone = _StatusTone.ready;
   bool _scanning = false;
@@ -55,12 +55,11 @@ class _HomePageState extends State<HomePage> {
     });
 
     _sampleSub = _central.samples.listen((s) {
-      _last = s;
       final pwr = (s.correctedW ?? 0).round();
       final cad = s.cadenceRpmCsc ?? s.ftms.cadenceRpm ?? 0;
       final speed = s.ftms.speedKmh ?? 0;
       _peripheral.update(speedKmh: speed, cadenceRpm: cad, powerW: pwr);
-      if (mounted) setState(() {});
+      _lastSample.value = s;
     });
 
     _connStateSub = _central.connState.listen((cs) {
@@ -183,6 +182,7 @@ class _HomePageState extends State<HomePage> {
     _connStateSub?.cancel();
     _centralStateSub?.cancel();
     _peripheralStateSub?.cancel();
+    _lastSample.dispose();
     WakelockPlus.disable();
     _central.dispose();
     super.dispose();
@@ -226,14 +226,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final s = _last;
-    final ftms = s?.ftms;
-    final pwrBroadcast = ftms?.powerW ?? 0;
-    final pwrCorrected = (s?.correctedW ?? 0).round();
-    final cad = s?.cadenceRpmCsc ?? ftms?.cadenceRpm ?? 0;
-    final r = ftms?.resistance ?? 0;
-    final hr = ftms?.heartRate ?? 0;
-
     final ble = _bleProblem;
     final canStartScan = _connected == null && !_scanning;
     // When BLE isn't ready, repurpose "Find bike" as the fix-it button so the
@@ -269,16 +261,14 @@ class _HomePageState extends State<HomePage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _StatusPill(label: _status, tone: _tone),
           const SizedBox(height: 12),
-          if (ble != null) _bleBanner(ble.message),
-          Row(children: [
+          if (ble != null) _bleBanner(ble.message, fixable: ble.fixable),
+          Wrap(spacing: 8, runSpacing: 8, children: [
             ElevatedButton(
                 onPressed: findOnPressed,
                 child: Text(findLabel)),
-            const SizedBox(width: 8),
             ElevatedButton(
                 onPressed: _scanning ? _stopScan : null,
                 child: const Text('Stop')),
-            const SizedBox(width: 8),
             ElevatedButton(
                 onPressed: _connected != null ? _disconnect : null,
                 child: const Text('Disconnect')),
@@ -293,18 +283,32 @@ class _HomePageState extends State<HomePage> {
               ),
             ]),
           ) else Expanded(
-            child: GridView.count(
-              crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12,
-              childAspectRatio: 1.6, children: [
-                _tile('Power', '$pwrCorrected W', highlight: true),
-                _tile('Cadence', '${cad.toStringAsFixed(0)} rpm'),
-                _tile('Resistance', '$r'),
-                _tile('Heart rate', '$hr bpm'),
-                _tile('Bike says', '$pwrBroadcast W'),
-                _tile('Correction',
-                    '${pwrCorrected - pwrBroadcast >= 0 ? '+' : ''}'
-                    '${pwrCorrected - pwrBroadcast} W'),
-              ],
+            child: ValueListenableBuilder<IC8Sample?>(
+              valueListenable: _lastSample,
+              builder: (context, s, _) {
+                final ftms = s?.ftms;
+                final pwrBroadcast = ftms?.powerW ?? 0;
+                final pwrCorrected = (s?.correctedW ?? 0).round();
+                final cad = s?.cadenceRpmCsc ?? ftms?.cadenceRpm ?? 0;
+                final r = ftms?.resistance ?? 0;
+                final hr = ftms?.heartRate ?? 0;
+                return GridView.extent(
+                  maxCrossAxisExtent: 220,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.6,
+                  children: [
+                    _tile('Power', '$pwrCorrected W', highlight: true),
+                    _tile('Cadence', '${cad.toStringAsFixed(0)} rpm'),
+                    _tile('Resistance', '$r'),
+                    _tile('Heart rate', '$hr bpm'),
+                    _tile('Bike says', '$pwrBroadcast W'),
+                    _tile('Correction',
+                        '${pwrCorrected - pwrBroadcast >= 0 ? '+' : ''}'
+                        '${pwrCorrected - pwrBroadcast} W'),
+                  ],
+                );
+              },
             ),
           ),
         ]),
@@ -312,35 +316,50 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _bleBanner(String message) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade100,
-        border: Border.all(color: Colors.amber.shade400),
-        borderRadius: BorderRadius.circular(8),
+  Widget _bleBanner(String message, {required bool fixable}) {
+    final cs = Theme.of(context).colorScheme;
+    final bg = fixable ? cs.tertiaryContainer : cs.errorContainer;
+    final fg = fixable ? cs.onTertiaryContainer : cs.onErrorContainer;
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.bluetooth_disabled, color: fg),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: TextStyle(color: fg))),
+        ]),
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(Icons.bluetooth_disabled, color: Colors.amber.shade900),
-        const SizedBox(width: 12),
-        Expanded(child: Text(message)),
-      ]),
     );
   }
 
   Widget _tile(String label, String value, {bool highlight = false}) {
+    final cs = Theme.of(context).colorScheme;
+    final bg = highlight ? cs.primaryContainer : cs.surfaceContainerHigh;
+    final fg = highlight ? cs.onPrimaryContainer : cs.onSurface;
     return Container(
       decoration: BoxDecoration(
-        color: highlight ? Colors.green.shade100 : Colors.grey.shade200,
+        color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
       padding: const EdgeInsets.all(12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const Spacer(),
-        Text(value, style: const TextStyle(fontSize: 24)),
-      ]),
+      child: Semantics(
+        label: '$label $value',
+        container: true,
+        excludeSemantics: true,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label,
+              style: TextStyle(color: fg, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          Text(value, style: TextStyle(color: fg, fontSize: 24)),
+        ]),
+      ),
     );
   }
 }
@@ -354,45 +373,55 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final (Color dot, Color bg, Color fg) = switch (tone) {
       _StatusTone.ready =>
-        (Colors.grey.shade500, Colors.grey.shade100, Colors.grey.shade800),
+        (cs.onSurfaceVariant, cs.surfaceContainerHigh, cs.onSurface),
       _StatusTone.working =>
-        (Colors.blue.shade500, Colors.blue.shade50, Colors.blue.shade900),
+        (cs.secondary, cs.secondaryContainer, cs.onSecondaryContainer),
       _StatusTone.connected =>
-        (Colors.green.shade600, Colors.green.shade50, Colors.green.shade900),
+        (cs.primary, cs.primaryContainer, cs.onPrimaryContainer),
       _StatusTone.warning =>
-        (Colors.amber.shade700, Colors.amber.shade50, Colors.amber.shade900),
+        (cs.tertiary, cs.tertiaryContainer, cs.onTertiaryContainer),
     };
     final spinning = tone == _StatusTone.working;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (spinning)
-          SizedBox(
-            width: 12, height: 12,
-            child: CircularProgressIndicator(
-              strokeWidth: 2, valueColor: AlwaysStoppedAnimation(dot)),
-          )
-        else
-          _Dot(color: dot),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: fg,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              letterSpacing: 0.2,
-            ),
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      label: label,
+      child: ExcludeSemantics(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(999),
           ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (spinning)
+              ExcludeSemantics(
+                child: SizedBox(
+                  width: 12, height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2, valueColor: AlwaysStoppedAnimation(dot)),
+                ),
+              )
+            else
+              _Dot(color: dot),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: fg,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ]),
         ),
-      ]),
+      ),
     );
   }
 }

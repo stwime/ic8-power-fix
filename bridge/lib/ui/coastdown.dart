@@ -6,6 +6,8 @@ import '../ble/central.dart';
 import '../physics/calibration.dart';
 import '../physics/coastdown.dart';
 
+enum _BannerTone { idle, info, success, warning, error }
+
 /// Coastdown calibration screen. Listens to the central's sample stream, runs
 /// a streaming detector, and accumulates clean (R, λ) points. Once ≥3 distinct
 /// R values are captured, the user can fit a·R + b and apply the result.
@@ -23,6 +25,7 @@ class _CoastdownPageState extends State<CoastdownPage> {
   StreamSubscription? _sampleSub;
   IC8Sample? _last;
   bool _seenAnyCsc = false;
+  final ValueNotifier<IC8Sample?> _lastSample = ValueNotifier(null);
 
   final List<CoastdownPoint> _points = [];
 
@@ -43,13 +46,14 @@ class _CoastdownPageState extends State<CoastdownPage> {
         crankRevs: s.crankRevs,
         crankEventTimeS: s.crankEventTimeS,
       ));
-      if (mounted) setState(() {});
+      _lastSample.value = s;
     });
   }
 
   @override
   void dispose() {
     _sampleSub?.cancel();
+    _lastSample.dispose();
     super.dispose();
   }
 
@@ -102,7 +106,10 @@ class _CoastdownPageState extends State<CoastdownPage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _instructions(context),
           const SizedBox(height: 12),
-          _liveStatus(context),
+          ValueListenableBuilder<IC8Sample?>(
+            valueListenable: _lastSample,
+            builder: (ctx, _, child) => _liveStatus(ctx),
+          ),
           const SizedBox(height: 12),
           Expanded(child: _pointsTable(context)),
           const SizedBox(height: 8),
@@ -129,29 +136,36 @@ class _CoastdownPageState extends State<CoastdownPage> {
   }
 
   Widget _instructions(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
-      color: Colors.blue.shade50,
+      color: colorScheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('How it works',
-              style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
-          const Text(
-              'You will pedal up and then stop, several times at different '
-              'resistance levels. The app measures how the flywheel slows '
-              'down each time. This usually takes 5–10 minutes.\n\n'
-              '1. Set the resistance dial to a low number (try 5).\n'
-              '2. Pedal until your cadence is at least 70 rpm.\n'
-              '3. Quickly lift both feet off the pedals at the same time so '
-              'they spin freely — a slow or one-foot-at-a-time release adds '
-              'drag and ruins the measurement. Keep your hands off the dial.\n'
-              '4. Wait for the pedals to stop spinning completely — the '
-              'measurement is not finished until they do.\n'
-              '5. Change the resistance and repeat — at least 3 different '
-              'resistance levels in total. More levels (and more coastdowns '
-              'per level) give a tighter fit.'),
-        ]),
+        child: DefaultTextStyle.merge(
+          style: TextStyle(color: colorScheme.onSecondaryContainer),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('How it works',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: colorScheme.onSecondaryContainer,
+                    )),
+            const SizedBox(height: 4),
+            Text(
+                'You will pedal up and then stop, several times at different '
+                'resistance levels. The app measures how the flywheel slows '
+                'down each time. This usually takes 5–10 minutes.\n\n'
+                '1. Set the resistance dial to a low number (try 5).\n'
+                '2. Pedal until your cadence is at least 70 rpm.\n'
+                '3. Quickly lift both feet off the pedals at the same time so '
+                'they spin freely — a slow or one-foot-at-a-time release adds '
+                'drag and ruins the measurement. Keep your hands off the dial.\n'
+                '4. Wait for the pedals to stop spinning completely — the '
+                'measurement is not finished until they do.\n'
+                '5. Change the resistance and repeat — at least 3 different '
+                'resistance levels in total. More levels (and more coastdowns '
+                'per level) give a tighter fit.',
+                style: TextStyle(color: colorScheme.onSecondaryContainer)),
+          ]),
+        ),
       ),
     );
   }
@@ -159,12 +173,12 @@ class _CoastdownPageState extends State<CoastdownPage> {
   Widget _liveStatus(BuildContext context) {
     final connected = widget.central.state == BridgeConnState.connected;
     if (!connected) {
-      return _statusBanner(Colors.orange.shade100,
+      return _statusBanner(_BannerTone.warning,
           'Not connected to your bike. Go back to the home screen and '
           'tap Find bike first.');
     }
     if (!_seenAnyCsc && _last != null) {
-      return _statusBanner(Colors.red.shade100,
+      return _statusBanner(_BannerTone.error,
           'Your bike is not reporting cadence in real-time, so calibration '
           'cannot run. Make sure the bike is on and the pedals are turning.');
     }
@@ -173,31 +187,60 @@ class _CoastdownPageState extends State<CoastdownPage> {
     final r = _last?.ftms.resistance ?? 0;
 
     if (running > 0) {
-      return _statusBanner(Colors.green.shade100,
+      return _statusBanner(_BannerTone.success,
           'Measuring at resistance ${_detector.currentRunR} — wait for the '
           'pedals to stop completely. Keep your hands off the dial. '
           'Cadence: '
           '${_detector.currentRunCadence?.toStringAsFixed(0)} rpm.');
     }
     if (cad >= 70) {
-      return _statusBanner(Colors.grey.shade200,
+      return _statusBanner(_BannerTone.info,
           'Lift both feet off the pedals at the same time to start a '
           'measurement. Cadence: ${cad.toStringAsFixed(0)} rpm at '
           'resistance $r.');
     }
-    return _statusBanner(Colors.grey.shade200,
+    return _statusBanner(_BannerTone.idle,
         'Pedal up to at least 70 rpm to begin. '
         'Cadence: ${cad.toStringAsFixed(0)} rpm at resistance $r.');
   }
 
-  Widget _statusBanner(Color bg, String text) {
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
+  Widget _statusBanner(_BannerTone tone, String text) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final Color bg;
+    final Color fg;
+    switch (tone) {
+      case _BannerTone.idle:
+        bg = colorScheme.surfaceContainerHigh;
+        fg = colorScheme.onSurface;
+        break;
+      case _BannerTone.info:
+        bg = colorScheme.secondaryContainer;
+        fg = colorScheme.onSecondaryContainer;
+        break;
+      case _BannerTone.success:
+        bg = colorScheme.primaryContainer;
+        fg = colorScheme.onPrimaryContainer;
+        break;
+      case _BannerTone.warning:
+        bg = colorScheme.tertiaryContainer;
+        fg = colorScheme.onTertiaryContainer;
+        break;
+      case _BannerTone.error:
+        bg = colorScheme.errorContainer;
+        fg = colorScheme.onErrorContainer;
+        break;
+    }
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Text(text, style: TextStyle(color: fg)),
       ),
-      padding: const EdgeInsets.all(12),
-      child: Text(text),
     );
   }
 
@@ -208,13 +251,17 @@ class _CoastdownPageState extends State<CoastdownPage> {
     }
     final body = Theme.of(context).textTheme.bodyMedium;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(children: [
-          SizedBox(width: 110, child: Text('Resistance', style: body)),
-          Expanded(child: Text('Quality', style: body)),
-          SizedBox(width: 28, child: Text('', style: body)),
-        ]),
+      Semantics(
+        header: true,
+        container: true,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(children: [
+            SizedBox(width: 110, child: Text('Resistance', style: body)),
+            Expanded(child: Text('Quality', style: body)),
+            SizedBox(width: 28, child: Text('', style: body)),
+          ]),
+        ),
       ),
       const Divider(height: 1),
       Expanded(child: ListView.builder(
@@ -238,9 +285,15 @@ class _CoastdownPageState extends State<CoastdownPage> {
     ]);
   }
 
+  // Per-coastdown fit quality from R² of ln(ω) vs. t. Excellent ≥ 0.99 reflects
+  // the empirical noise floor of a clean lift-off; below 0.97 usually means a
+  // foot-drag or dial-touch contaminated the run.
+  static const double _r2Excellent = 0.99;
+  static const double _r2Good = 0.97;
+
   static String _qualityLabel(double r2) {
-    if (r2 >= 0.99) return 'Excellent';
-    if (r2 >= 0.97) return 'Good';
+    if (r2 >= _r2Excellent) return 'Excellent';
+    if (r2 >= _r2Good) return 'Good';
     return 'Fair';
   }
 }
@@ -279,9 +332,16 @@ class _FitPreviewDialog extends StatelessWidget {
     );
   }
 
+  // Cross-run fit quality of λ vs. R. Thresholds are in λ-units; "Excellent"
+  // corresponds to ~±2% power error at typical resistances.
+  static const double _rmsExcellent = 0.01;
+  static const double _maxResidExcellent = 0.02;
+  static const double _rmsGood = 0.02;
+  static const double _maxResidGood = 0.04;
+
   static String _overall(double rms, double maxResid) {
-    if (rms < 0.01 && maxResid < 0.02) return 'Excellent';
-    if (rms < 0.02 && maxResid < 0.04) return 'Good';
+    if (rms < _rmsExcellent && maxResid < _maxResidExcellent) return 'Excellent';
+    if (rms < _rmsGood && maxResid < _maxResidGood) return 'Good';
     return 'Fair — consider redoing with steadier coastdowns';
   }
 }
