@@ -97,46 +97,58 @@ def R_at_segment_start(log_t: np.ndarray, log_R: np.ndarray,
 
 
 # ---------------------------------------------------------------------------
-# Per-revolution ω from cumulative angle.
+# Adaptive-window ω from cumulative angle.
 # ---------------------------------------------------------------------------
 
-def per_rev_omega(t: np.ndarray, cum: np.ndarray
-                  ) -> tuple[np.ndarray, np.ndarray]:
-    """Return (t_mid, ω) for every successive 2π advance in cum.
+def adaptive_period_omega(t: np.ndarray, cum: np.ndarray
+                          ) -> tuple[np.ndarray, np.ndarray]:
+    """Return (t_mid, ω) where each ω is the average rotational rate over
+    the next 2π of cumulative angle starting at frame i. ω = 2π / (t[hi]
+    − t[i]) where hi is the smallest index with cum[hi] − cum[i] ≥ 2π,
+    time-stamped at the midpoint of [t[i], t[hi]]. Wobble cancels
+    because the integral of the once-per-rev sinusoid over exactly one
+    rotation period is zero.
 
-    Each ω is an exact one-revolution average (2π / Δt between two
-    times where cum advances by 2π), so the once-per-rev gravity-pendulum
-    oscillation cancels by construction. Linear interpolation on cum gives
-    sub-frame timing of the crossings.
+    Frames in the last rev of the segment (where cum can't advance 2π
+    before the data ends) are dropped — symmetric centered windows
+    create flat plateaus at the boundaries that bias the log-linear λ
+    estimate downward, so we skip them. Output sample count is
+    (frames_in_segment − last_rev_frames), spaced roughly one per video
+    frame across the time-varying portion of the spindown.
     """
-    if len(t) < 2:
+    n = len(t)
+    if n < 2:
         return np.array([]), np.array([])
     cum = np.asarray(cum, dtype=float)
     t = np.asarray(t, dtype=float)
     if cum[-1] < cum[0]:
         cum = -cum
-    if cum[-1] - cum[0] < 2 * math.pi:
+    target = 2 * math.pi
+    t_out: list[float] = []
+    om_out: list[float] = []
+    hi = 0
+    for i in range(n):
+        if hi < i:
+            hi = i
+        while hi < n and cum[hi] - cum[i] < target:
+            hi += 1
+        if hi >= n:
+            break  # no more full revs available — drop the tail
+        # Linearly interpolate the exact crossing of cum[i] + 2π between
+        # frames hi-1 and hi for sub-frame timing accuracy.
+        denom = cum[hi] - cum[hi - 1]
+        if denom > 1e-12:
+            frac = (cum[i] + target - cum[hi - 1]) / denom
+            t_cross = float(t[hi - 1] + frac * (t[hi] - t[hi - 1]))
+        else:
+            t_cross = float(t[hi])
+        dt = t_cross - t[i]
+        if dt > 1e-9:
+            t_out.append(0.5 * (t[i] + t_cross))
+            om_out.append(target / dt)
+    if len(t_out) < 2:
         return np.array([]), np.array([])
-    target = cum[0] + 2 * math.pi
-    cross_t: list[float] = []
-    n = len(cum)
-    for i in range(1, n):
-        while cum[i] >= target:
-            denom = cum[i] - cum[i - 1]
-            if denom > 1e-12:
-                frac = (target - cum[i - 1]) / denom
-                cross_t.append(float(t[i - 1] + frac * (t[i] - t[i - 1])))
-            else:
-                cross_t.append(float(t[i]))
-            target += 2 * math.pi
-    if len(cross_t) < 2:
-        return np.array([]), np.array([])
-    cross = np.asarray(cross_t)
-    dt = np.diff(cross)
-    valid = dt > 1e-6
-    omega = (2 * math.pi) / dt[valid]
-    t_mid = 0.5 * (cross[:-1] + cross[1:])[valid]
-    return t_mid, omega
+    return np.array(t_out), np.array(om_out)
 
 
 # ---------------------------------------------------------------------------
@@ -177,20 +189,16 @@ def load_video(csv_path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 def extract_video(t_v: np.ndarray, cum_v: np.ndarray, abs_om: np.ndarray,
                   t_in: float, t_out: float
                   ) -> tuple[np.ndarray, np.ndarray, str]:
-    """Per-rev ω over [t_in, t_out] from the cumulative-angle integration.
-    Falls back to windowed ω (smoothed |ω|) when the window contains <2
-    full revs — that's the typical situation at R≥85, dur ≈ 2–3 s.
+    """ω over [t_in, t_out] from the precomputed smoothed |ω| trace.
+    One sample per video frame across the full curated window. At 120fps
+    that's plenty of resolution even for high-R spindowns where the
+    disc stops in <1 rev — the small once-per-rev wobble in the angle
+    trace is below the fit noise floor with this many samples.
     Returns (t_rel, omega, method)."""
     mask = (t_v >= t_in) & (t_v <= t_out)
     if mask.sum() < 2:
         return np.array([]), np.array([]), "empty"
     tt = t_v[mask]
-    cum = cum_v[mask]
-    t_rev, om_rev = per_rev_omega(tt, cum)
-    if len(t_rev) >= 2:
-        return t_rev - t_rev[0], om_rev, "per_rev"
-    # Fallback: windowed ω over the same mask. Pendulum wobble is
-    # smaller than the fast decay at high R so it's still readable.
     return tt - tt[0], abs_om[mask], "windowed"
 
 

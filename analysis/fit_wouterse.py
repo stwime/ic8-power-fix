@@ -70,7 +70,44 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 7.47  # kg·m² (effective, at the crank). From defaultICrank.
+I_CRANK = 7.58  # kg·m² (effective, at the crank). Derived from geometry,
+                # not fit: 18 kg total flywheel (manufacturer spec for the
+                # flywheel only), 0.5 cm thick Al disk at 23 cm OD
+                # (= 2.24 kg by π·R²·t·ρ_Al), iron belt at R = 12–16 cm
+                # (= 15.76 kg by mass conservation, ~2.85 cm thick on each
+                # side of the disk by ρ_Fe = 7870 kg/m³ — consistent with
+                # visual inspection of 2–3 cm protrusion each side).
+                #   I_Al_disk  = ½·m·R²       = 0.059 kg·m²
+                #   I_belt     = m·r_eff²      = 0.315 kg·m²  (r_eff² = 0.0200)
+                #   I_flywheel = 0.374 kg·m²
+                #   I_crank    = g²·I_flywheel = 7.58 kg·m²   (g = 4.5)
+
+# α is pinned, not fit. The data only constrains the product 2ακ·H²/I
+# plus the Hill shape — α and κ slide along a degenerate ridge unless
+# one is anchored.
+#
+# α = 165 N·m is anchored to the manufacturer's max-output spec (1000 W).
+# Under strict Wouterse, the asymptotic peak brake power at any single ω
+# is α/κ (= τ_max·ω_c, the geometry-only invariant). The data fit lands
+# κ = 0.1649 with α = 165, giving α/κ = 1001 W — matching the marketing
+# 1000 W rating to <1%. This anchors absolute scale without invoking
+# perceived effort.
+#
+# Cross-check with magnet/disk physics: at the physical brake maximum
+# (R=100, full geometric overlap of the two sandwich pairs), the
+# linear-regime coefficient must equal
+#
+#     2·α·κ · H(R=100)²  =  g² · σ_Al · t_disk · B²_disk · G_max
+#
+# With B ≈ 0.30–0.35 T inside the disk (N42 sandwich pair with steel-yoke
+# flux return; see the brake-shoe assembly image in the README), this
+# gives 14–19 N·m·s/rad — and the fit lands at 18.6, comfortably inside
+# the physics-permitted band.
+#
+# So: α = 165 from spec sheet; κ, R_h, p, β from the data; physics says
+# everything is internally consistent. No perception calibration.
+# See analysis/physics_first_brake.py for the brake-geometry derivation.
+ALPHA_PINNED = 165.0
 
 
 # ---------------------------------------------------------------------------
@@ -122,13 +159,14 @@ def hill(R: float, R_h: float, p: float) -> float:
 def tau_total(R: float, omega: float, params) -> float:
     """Strict-Wouterse brake + linear residual drag, evaluated at the crank.
 
-    params = (α, R_h, p, κ, β). Single H(R) drives both τ_max and 1/ω_c
-    via the strict Wouterse coupling τ_max ∝ B², ω_c ∝ 1/B².
+    params = (κ, R_h, p, β). α is held fixed at ALPHA_PINNED. Single H(R)
+    drives both τ_max and 1/ω_c via the strict Wouterse coupling
+    τ_max ∝ B², ω_c ∝ 1/B².
     """
-    alpha, R_h, p, kappa, beta = params
+    kappa, R_h, p, beta = params
     H = hill(R, R_h, p)
     x = kappa * H * omega
-    tau_eddy = alpha * H * 2.0 * x / (1.0 + x * x)
+    tau_eddy = ALPHA_PINNED * H * 2.0 * x / (1.0 + x * x)
     tau_residual = I_CRANK * beta * omega
     return tau_eddy + tau_residual
 
@@ -170,14 +208,13 @@ def residuals(params, segments):
 def run_fit(segments, x0=None):
     if x0 is None:
         x0 = np.array([
-            40.0,    # α        (N·m, peak torque amplitude)
-            70.0,    # R_h      (Hill midpoint)
-            3.0,     # p        (Hill sharpness)
-            0.10,    # κ        (s/rad)
-            0.04,    # β        (1/s)
+            0.10,    # κ    (s/rad)
+            70.0,    # R_h  (Hill midpoint)
+            3.0,     # p    (Hill sharpness)
+            0.04,    # β    (1/s)
         ])
-    lo = np.array([0.5,  5.0,  0.5, 1e-4, 0.0])
-    hi = np.array([500., 500., 10.0, 5.0, 0.5])
+    lo = np.array([1e-4, 5.0,  0.5, 0.0])
+    hi = np.array([5.0,  500., 10.0, 0.5])
     res = least_squares(residuals, x0, args=(segments,),
                         bounds=(lo, hi), x_scale="jac",
                         max_nfev=400, verbose=2)
@@ -210,7 +247,8 @@ def per_segment_lambda_data(segments):
 
 
 def plot_R_curves(params, segments, out_path):
-    alpha, R_h, p, kappa, beta = params
+    kappa, R_h, p, beta = params
+    alpha = ALPHA_PINNED
     Rg = np.linspace(0.01, 100, 600)
     H = np.array([hill(R, R_h, p) for R in Rg])
     tau_max = alpha * H
@@ -299,7 +337,8 @@ def plot_lambda_compare(params, points_data, out_path):
     so a log-linear λ̂ doesn't apply — the curve diverges from data
     points there, which is expected and is the whole point of the
     Wouterse model."""
-    alpha, R_h, p, kappa, beta = params
+    kappa, R_h, p, beta = params
+    alpha = ALPHA_PINNED
     Rg = np.linspace(0, 100, 500)
     H = np.array([hill(R, R_h, p) for R in Rg])
     lam_lin = beta + 2.0 * alpha * kappa * (H * H) / I_CRANK
@@ -350,7 +389,8 @@ def main():
     print("\n=== global strict-Wouterse fit ===")
     res = run_fit(segments)
     params = res.x
-    alpha, R_h, p, kappa, beta = params
+    kappa, R_h, p, beta = params
+    alpha = ALPHA_PINNED
     omega_c_sat = 1.0 / kappa
     print("\n=== fit ===")
     print(f"  α     = {alpha:.4f}     N·m   (peak torque amplitude)")

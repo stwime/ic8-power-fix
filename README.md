@@ -88,14 +88,14 @@ subtracts and the total goes to zero (the rider isn't doing work).
 
 $$H(R) = \frac{R^p}{R^p + R_h^p}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \frac{1}{\omega_c(R)} = \kappa\,H(R)$$
 
-Fit by integrating the spindown ODE $I\,\dot\omega = -\tau_{\text{brake}}(R,\omega) - I\,\beta\,\omega$ against the actual $\omega(t)$ of every spindown — *not* a per-segment log-linear $\hat\lambda$ fit (which would be biased wherever the bell curve bites). Hand-curated dataset of 42 video-tracked spindowns spanning $R = 0$ to $93$ (`analysis/fit_wouterse.py`).
+Fit by integrating the spindown ODE $I\,\dot\omega = -\tau_{\text{brake}}(R,\omega) - I\,\beta\,\omega$ against the actual $\omega(t)$ of every spindown — *not* a per-segment log-linear $\hat\lambda$ fit (which would be biased wherever the bell curve bites). Hand-curated dataset of 46 video-tracked spindowns spanning $R = 0$ to $93$ (`analysis/fit_wouterse.py`).
 
-- $\alpha = 400$ N·m, peak torque amplitude (per-bike).
-- $\beta = 0.0343$ per second, residual drag at $R = 0$ (per-bike).
-- $\kappa = 0.147$ s/rad, $1/\omega_c$ at saturation (geometry).
-- $R_h = 167.6$, Hill midpoint (geometry × bike-firmware mapping).
-- $p = 1.07$, Hill sharpness (geometry × bike-firmware mapping).
-- $\alpha/\kappa \approx 2.7$ kW, the $\tau_{\max} \cdot \omega_c$ invariant set by disc conductivity × thickness × pole-area × radius².
+- $\alpha = 165$ N·m, peak torque amplitude. Anchored to the manufacturer's 1000 W max-output spec via $\alpha/\kappa = 1001$ W (the asymptotic peak brake power under strict Wouterse).
+- $\beta = 0.0384$ per second, residual drag at $R = 0$.
+- $\kappa = 0.165$ s/rad, $1/\omega_c$ at saturation (geometry).
+- $R_h = 87.6$, Hill midpoint (geometry × bike-firmware mapping).
+- $p = 1.20$, Hill sharpness (geometry × bike-firmware mapping).
+- $\alpha/\kappa \approx 1.0$ kW, the $\tau_{\max} \cdot \omega_c$ invariant set by disc conductivity × thickness × pole-area × radius². Matches the marketing 1000 W max to <1%.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
@@ -103,9 +103,17 @@ In our spindown $\omega$ window the trajectories are mostly in the linear regime
 
 $R_h$, $p$, and $\kappa$ are held fixed across bikes because they combine the eddy-brake gap-vs-dial physics with whatever non-linear mapping the IC8's firmware applies between dial position and physical brake state. Those layers are inseparable from spindown data alone, so they ship as defaults. Only $(\alpha, \beta)$ are fit per bike by Auto-calibrate, against the linear-regime design row $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$ that the Wouterse model collapses to at user-coastdown cadences.
 
-**$I$ from flywheel geometry plus gear leverage.** The IC8's 18 kg, 46 cm-diameter aluminum flywheel has its mass concentrated at $r_{\text{eff}} \approx 14.3$ cm (about 62% of the disc radius, observed by inspecting where the bulk is and confirmed by the perceived-effort calibration sliding to 1.0). That gives $I_{\text{flywheel}} = m\,r_{\text{eff}}^2 \approx 0.37$ kg·m². With the video-confirmed flywheel-to-crank gear ratio $g = 4.5$, the effective inertia at the crank is $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} \approx 7.47$ kg·m².
+**$I$ from flywheel geometry, no fitting.** The IC8's 18 kg flywheel decomposes into a thin Al disc and a heavy iron belt:
+- Al disc: $\pi \cdot R^2 \cdot t \cdot \rho_{\text{Al}} = \pi \cdot (0.23)^2 \cdot 0.005 \cdot 2700 = 2.24$ kg (23 cm OD, 5 mm thick — measured).
+- Iron belt at $R = 12$–$16$ cm: $18 - 2.24 = 15.76$ kg by mass conservation, ~2.85 cm thick on each side of the disc by $\rho_{\text{Fe}} = 7870$ kg/m³ — consistent with visual inspection of 2–3 cm protrusion each side.
 
-The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together by the same factor, so steady-state, residual drag, and the KE term all scale linearly in lockstep. It's a clean absolute-scale knob that doesn't distort cadence or R shape. Default is 1.0 — broadcast cadence has been verified accurate against a metronome, gear ratio against video, and mass distribution against the visible flywheel, so there is no longer a known systematic offset for the slider to absorb. Tune against an external power meter when one is available.
+Then $I_{\text{flywheel}} = \tfrac{1}{2}\,m_{\text{disc}}\,R^2 + m_{\text{belt}}\,r_{\text{eff}}^2 = 0.059 + 0.315 = 0.374$ kg·m². With the video-confirmed flywheel-to-crank gear ratio $g = 4.5$, the effective inertia at the crank is $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 7.58$ kg·m².
+
+**$\alpha$ from the manufacturer's 1000 W max-output rating.** Under strict Wouterse, the asymptotic peak brake power at any single $\omega$ is $\alpha/\kappa$ — that's the most resistance the brake can ever produce. Setting $\alpha = 165$ N·m gives $\alpha/\kappa = 1001$ W against the data-fit $\kappa$, matching the spec to within 1%.
+
+These three anchors — disc geometry, belt geometry, and the brake's stated max output — are independent of each other and of perceived effort. They land on a calibration that's self-consistent both with the data (RSS = 0.040 across 51,792 samples) and with the bike's design specs.
+
+The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together by the same factor, so steady-state, residual drag, and the KE term all scale linearly in lockstep. It's a clean absolute-scale knob that doesn't distort cadence or R shape. Default is 1.0. Tune against an external power meter when one is available.
 
 ## Reality check: the model decomposes a sprint cleanly
 
@@ -143,7 +151,7 @@ mode isn't possible regardless of what you pair it to.
 
 ## Limitations
 
-- **Absolute scale depends on your unit, and the model can't infer it from spindowns alone.** The *shape* of the correction (Wouterse $\tau(\omega)$, saturating $\tau_{\max}(R)$) is physics-derived and solid. The multiplicative offset is structurally underdetermined: spindowns fit $\alpha$ from $I\,\dot\omega = -\tau$, so $\alpha$ scales linearly with whatever $I_{\text{crank}}$ we assume. The shipped $I_{\text{crank}} \approx 7.47$ kg·m² is anchored to a visually-estimated mass concentration on the reference unit; another IC8 with different mass distribution or manufacturing tolerances could land 10% off. The Power scale slider scales $\alpha$ and $I_{\text{crank}}$ together to absorb that, but pinning it requires an external power meter on this bike.
+- **Absolute scale depends on your unit, and the model can't infer it from spindowns alone.** The *shape* of the correction (Wouterse $\tau(\omega)$, saturating $\tau_{\max}(R)$) is physics-derived and solid. The multiplicative offset is structurally underdetermined: spindowns fit $\alpha$ from $I\,\dot\omega = -\tau$, so $\alpha$ scales linearly with whatever $I_{\text{crank}}$ we assume. The shipped $I_{\text{crank}} = 7.58$ kg·m² is from direct geometry (disc mass + iron-belt mass) on the reference unit, and $\alpha = 165$ N·m is anchored to the manufacturer's 1000 W rating; another IC8 with different mass distribution or manufacturing tolerances could still land 10% off. The Power scale slider scales $\alpha$ and $I_{\text{crank}}$ together to absorb that, but pinning it requires an external power meter on this bike.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence if the bike exposes CSC. Otherwise it clamps and slightly underestimates sprint power.
 - **Bell-curve onset $\omega_c(R)$ is anchored by the Wouterse coupling $\tau_{\max} \cdot \omega_c = \alpha/\kappa$, not by spindowns reaching the regime.** Our spindowns sit mostly below $\omega_c$ in the linear-damping range, so the data anchors $\tau_{\max}(R)$ cleanly but the bell-curve $\omega_c(R)$ is constrained by physics (strict $\tau_{\max} \propto B^2$, $\omega_c \propto 1/B^2$) more than by trajectory shape. Disambiguating $\omega_c(R)$ at high $R$ would need either independent $B(R)$ measurement or coastdowns from much higher peak cadence, neither of which we have for the calibration set.
 
