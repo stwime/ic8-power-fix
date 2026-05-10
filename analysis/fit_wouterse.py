@@ -86,26 +86,17 @@ I_CRANK = 7.58  # kg·m² (effective, at the crank). Derived from geometry,
 # plus the Hill shape — α and κ slide along a degenerate ridge unless
 # one is anchored.
 #
-# α = 165 N·m is anchored to the manufacturer's max-output spec (1000 W).
-# Under strict Wouterse, the asymptotic peak brake power at any single ω
-# is α/κ (= τ_max·ω_c, the geometry-only invariant). The data fit lands
-# κ = 0.1649 with α = 165, giving α/κ = 1001 W — matching the marketing
-# 1000 W rating to <1%. This anchors absolute scale without invoking
-# perceived effort.
+# Our coastdown set sits mostly in the linear-damping regime ω << ω_c,
+# so the bell-curve saturation isn't directly observed. Releasing α
+# with the Hill shape free walks the optimizer to the upper bound
+# (α/κ → ∞, model degenerates into power-law). α has to be set by an
+# external prior.
 #
-# Cross-check with magnet/disk physics: at the physical brake maximum
-# (R=100, full geometric overlap of the two sandwich pairs), the
-# linear-regime coefficient must equal
+# α = 165 N·m anchors α/κ ≈ 1000 W, matching the manufacturer's max-
+# output spec. This anchors absolute scale without invoking perceived
+# effort, and keeps the asymptotic saturation ceiling at a defensible,
+# specification-grounded number. RSS = 0.0396 across 51,792 samples.
 #
-#     2·α·κ · H(R=100)²  =  g² · σ_Al · t_disk · B²_disk · G_max
-#
-# With B ≈ 0.30–0.35 T inside the disk (N42 sandwich pair with steel-yoke
-# flux return; see the brake-shoe assembly image in the README), this
-# gives 14–19 N·m·s/rad — and the fit lands at 18.6, comfortably inside
-# the physics-permitted band.
-#
-# So: α = 165 from spec sheet; κ, R_h, p, β from the data; physics says
-# everything is internally consistent. No perception calibration.
 # See analysis/physics_first_brake.py for the brake-geometry derivation.
 ALPHA_PINNED = 165.0
 

@@ -52,7 +52,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
 ///      Under strict Wouterse, the asymptotic peak brake power at any
 ///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.165 and
-///      α/κ = 1001 W — matching the 1000 W rating to <1%.
+///      α/κ = 1001 W — matching the 1000 W rating to <1%. The saturation
+///      bell-curve isn't directly observed in our coastdowns (which sit
+///      in the linear-damping regime ω << ω_c), but it's a real physical
+///      constraint of permanent-magnet eddy brakes — finite magnetic
+///      flux through the disc bounds the peak absorbable power. The
+///      marketing spec is our anchor for where that ceiling sits.
 ///
 ///   3. Hill shape (R_h, p), κ, and β from a global fit on 46 video-
 ///      tracked spindowns spanning R = 0 to 93. RSS = 0.040 across
@@ -60,10 +65,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// All three are mutually consistent — the data, the geometry, and the
 /// marketing spec land on the same calibration without invoking
-/// perceived effort anywhere. Cross-check with magnet physics: at full
-/// geometric overlap (R=100), the implied B inside the disc is
-/// 0.30–0.35 T, the physically plausible band for the N42 sandwich
-/// pairs with steel-yoke flux return shown in the brake-shoe image.
+/// perceived effort anywhere.
 ///
 /// [powerScale] is a coupled absolute-scale knob: it multiplies α and
 /// I_crank by the same factor, so the eddy steady term, the residual

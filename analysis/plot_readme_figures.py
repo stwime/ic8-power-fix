@@ -3,13 +3,17 @@
 Run from repo root: python analysis/plot_readme_figures.py
 
 Figures regenerated:
-  docs/figures/power_curves.png  — IC8 broadcast (dashed) vs bridge
-                                   corrected (solid) at several R values
-                                   across the cadence range, at the
-                                   shipped powerScale default.
-  docs/figures/indoor_surge.png  — R=28 spin-up from
-                                   data/calibration/holding_*.csv,
-                                   decomposed into steady + KE terms.
+  docs/figures/power_curves.png   — IC8 broadcast (dashed) vs bridge
+                                    corrected (solid) at several R values
+                                    across the cadence range, at the
+                                    shipped powerScale default.
+  docs/figures/indoor_surge.png   — R=28 spin-up from
+                                    data/calibration/holding_*.csv,
+                                    decomposed into steady + KE terms.
+  docs/figures/spindown_fit.png   — representative ω(t) coastdowns at
+                                    four R values, model overlay on
+                                    every segment, showing the fit
+                                    tracks the actual trajectories.
 
 Constants are duplicated from bridge/lib/physics/calibration.dart so
 this script has no Flutter/Dart dependency. Keep them in sync if
@@ -19,13 +23,16 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from collections import defaultdict
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
 
 ROOT = Path(__file__).resolve().parent.parent
 FIG_DIR = ROOT / "docs" / "figures"
 SPRINT_CSV = ROOT / "data/calibration/spin_downs_apr29.csv"
+ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 ALPHA = 165.0
@@ -184,6 +191,117 @@ def plot_indoor_surge():
     print(f"Wrote {out}")
 
 
+def _load_spindowns():
+    """Return list of {R, occ, t, omega} dicts from all_spindowns.csv."""
+    if not ALL_SPINDOWNS_CSV.exists():
+        return []
+    by_id: dict[int, dict] = defaultdict(lambda: {"t": [], "omega": []})
+    with ALL_SPINDOWNS_CSV.open() as f:
+        for row in csv.DictReader(f):
+            sid = int(row["id"])
+            s = by_id[sid]
+            if "R" not in s:
+                s["R"] = int(row["R"])
+                s["occ"] = int(row["occ"])
+            s["t"].append(float(row["t_s"]))
+            s["omega"].append(float(row["omega_rad_s"]))
+    out = []
+    for s in by_id.values():
+        t = np.asarray(s["t"], dtype=float)
+        om = np.asarray(s["omega"], dtype=float)
+        if len(t) < 4 or (om <= 0).any():
+            continue
+        order = np.argsort(t)
+        s["t"] = t[order] - t[order][0]
+        s["omega"] = om[order]
+        out.append(s)
+    return out
+
+
+def _tau_model(R, omega):
+    h = float(hill(np.array([R]))[0])
+    x = KAPPA * h * omega
+    tau_eddy = ALPHA * h * 2.0 * x / (1.0 + x * x)
+    tau_residual = I_CRANK * BETA * omega
+    return tau_eddy + tau_residual
+
+
+def _integrate(R, t, omega0):
+    def rhs(_t, y):
+        return [-_tau_model(R, y[0]) / I_CRANK]
+    sol = solve_ivp(rhs, (float(t[0]), float(t[-1]) + 1e-6),
+                    [omega0], t_eval=t,
+                    method="LSODA", rtol=1e-7, atol=1e-9)
+    return sol.y[0] if sol.success else None
+
+
+def plot_spindown_fit():
+    """Four panels at representative R, model curve overlaid on every
+    coastdown segment at that R. Direct apples-to-apples ω(t)
+    comparison — no biased log-linear summary statistic."""
+    segments = _load_spindowns()
+    if not segments:
+        print(f"skipping spindown_fit.png — {ALL_SPINDOWNS_CSV} missing")
+        return
+
+    by_R = defaultdict(list)
+    for s in segments:
+        by_R[s["R"]].append(s)
+
+    # Pick four R buckets spanning the range we have data for.
+    available = sorted(by_R.keys())
+
+    def closest(target):
+        return min(available, key=lambda r: abs(r - target))
+
+    targets = [closest(t) for t in [11, 31, 60, 90]]
+    # de-duplicate while preserving order
+    seen = set()
+    panels = []
+    for r in targets:
+        if r in seen:
+            continue
+        seen.add(r)
+        panels.append(r)
+
+    fig, axes = plt.subplots(2, 2, figsize=(9.5, 6.2), sharex=False)
+    axes = axes.flatten()
+    colors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#d62728"]
+    for ax, R, color in zip(axes, panels, colors):
+        segs = by_R[R]
+        for s in segs:
+            t, om = s["t"], s["omega"]
+            ax.plot(t, om, "o", color="#333", ms=3, alpha=0.45,
+                    markeredgewidth=0)
+            om_pred = _integrate(float(R), t, float(om[0]))
+            if om_pred is not None:
+                ax.plot(t, om_pred, "-", color=color, lw=2.0, alpha=0.95)
+        ax.set_title(f"R = {R}   (n = {len(segs)} coastdowns)",
+                     fontsize=10)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Crank ω (rad/s)")
+        ax.grid(True, alpha=0.25)
+
+    handles = [
+        plt.Line2D([], [], marker="o", color="#333", linestyle="",
+                   ms=5, alpha=0.6, label="Coastdown data"),
+        plt.Line2D([], [], color="#222", lw=2.0,
+                   label="Wouterse model"),
+    ]
+    fig.legend(handles=handles, loc="upper center",
+               ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.985))
+    fig.suptitle(
+        "Spin-down model vs data — representative R buckets",
+        fontsize=12, weight="bold", y=1.005,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    out = FIG_DIR / "spindown_fit.png"
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Wrote {out}")
+
+
 if __name__ == "__main__":
     plot_power_curves()
     plot_indoor_surge()
+    plot_spindown_fit()
