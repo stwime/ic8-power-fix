@@ -131,25 +131,40 @@ class _HomePageState extends State<HomePage> {
           });
         }
       }
+    }, onError: (e) {
+      // startDiscovery throws when BLE flips off mid-scan or permission is
+      // revoked. Without this handler the error escapes the zone, the
+      // spinner stays, and Stop is the only way out.
+      if (!mounted) return;
+      setState(() {
+        _status = 'Could not scan: $e';
+        _tone = _StatusTone.warning;
+        _scanning = false;
+      });
     });
   }
 
   Future<void> _stopScan() async {
-    await _scanSub?.cancel();
-    _scanSub = null;
-    await _central.stopScan();
+    // Flip the UI synchronously: cancelling the async* generator's `await for`
+    // and the platform stopDiscovery call can each block for a noticeable time,
+    // and if either throws we still want the spinner to go away.
     setState(() {
       _status = 'Ready';
       _tone = _StatusTone.ready;
       _scanning = false;
     });
+    final sub = _scanSub;
+    _scanSub = null;
+    try { await sub?.cancel(); } catch (_) {}
+    try { await _central.stopScan(); } catch (_) {}
   }
 
   Future<void> _connect(Peripheral p) async {
-    await _scanSub?.cancel();
-    _scanSub = null;
-    await _central.stopScan();
     setState(() => _scanning = false);
+    final sub = _scanSub;
+    _scanSub = null;
+    try { await sub?.cancel(); } catch (_) {}
+    try { await _central.stopScan(); } catch (_) {}
     try {
       // Keep the device awake while we're bridging — Rouvy/MyWhoosh runs on a
       // separate device, so this phone's job is to stay foregrounded with BLE
