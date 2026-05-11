@@ -70,23 +70,25 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 9.29  # kg·m² (effective, at the crank). Derived from geometry,
-                # not fit. 18 kg total flywheel (manufacturer spec) decomposes
-                # into two iron weight-rings (one on each face of the Al disc)
-                # plus the disc itself. The rings were measured with a ruler
-                # against the outer edge of the disc (R_disc = 0.23 m):
-                #   Side A: r = 13.5–18.5 cm, h ≤ 2.0 cm  (5 cm wide, 2 cm thick)
-                #   Side B: r = 13.0–17.0 cm, h ≤ 1.5 cm  (4 cm wide, 1.5 cm thick)
-                # At ρ_Fe = 7870 kg/m³, V·ρ caps belt mass at 7.91 + 4.45 =
-                # 12.36 kg. The Al disc gets the residual 5.64 kg by mass
-                # conservation — implying ~12.6 mm average disc thickness,
-                # not 5 mm. The original 5 mm was the thinnest exposed
-                # section; the disc has a thicker hub / backing structure.
-                #   I_belt_A = m·(r_in² + r_out²)/2 = 0.2075 kg·m²
-                #   I_belt_B = m·(r_in² + r_out²)/2 = 0.1019 kg·m²
-                #   I_Al_disc = ½·m·R²              = 0.1491 kg·m²
-                #   I_flywheel                       = 0.4585 kg·m²
-                #   I_crank   = g²·I_flywheel = 9.29 kg·m²   (g = 4.5)
+I_CRANK = 9.19  # kg·m² (effective, at the crank). Derived from geometry,
+                # not fit. 18 kg total flywheel (manufacturer spec): a 5 mm
+                # uniform Al disc plus two lead weight-rings, one on each
+                # face. Disc radius R = 0.23 m (46 cm OD); rings measured
+                # by ruler against the outer edge:
+                #   Disc:   π·R²·t·ρ_Al = π·(0.23)²·0.005·2700 = 2.24 kg
+                #   Ring A: r = 13.5–18.5 cm, h ≤ 2.0 cm  (5 cm wide)
+                #   Ring B: r = 13.0–17.0 cm, h ≤ 1.5 cm  (4 cm wide)
+                # Both rings sit at ~88% of their measured "less than"
+                # thickness bounds → m_A = 10.09 kg, m_B = 5.67 kg at
+                # ρ_Pb = 11340 kg/m³. Lead is the only material that
+                # closes the mass budget: iron, brass, copper, even
+                # bismuth all need thicker rings than the upper bounds
+                # allow (iron would need 27% over the measured thickness).
+                #   I_disc    = ½·m·R²              = 0.0593 kg·m²
+                #   I_ring_A  = m·(r_in² + r_out²)/2 = 0.2645 kg·m²
+                #   I_ring_B  = m·(r_in² + r_out²)/2 = 0.1299 kg·m²
+                #   I_flywheel                       = 0.4537 kg·m²
+                #   I_crank   = g²·I_flywheel = 9.19 kg·m²   (g = 4.5)
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the Hill shape — α and κ slide along a degenerate ridge unless
@@ -101,7 +103,7 @@ I_CRANK = 9.29  # kg·m² (effective, at the crank). Derived from geometry,
 # α = 165 N·m anchors α/κ ≈ 1000 W, matching the manufacturer's max-
 # output spec. This anchors absolute scale without invoking perceived
 # effort, and keeps the asymptotic saturation ceiling at a defensible,
-# specification-grounded number. RSS = 0.0433 across 51,792 samples.
+# specification-grounded number. RSS = 0.0431 across 51,792 samples.
 #
 # See analysis/physics_first_brake.py for the brake-geometry derivation.
 ALPHA_PINNED = 165.0

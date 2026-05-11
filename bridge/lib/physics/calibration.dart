@@ -40,25 +40,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// calibration:
 ///
 ///   1. [defaultICrank] from flywheel geometry. 18 kg total flywheel
-///      (manufacturer spec) decomposes into two iron weight-rings (one on
-///      each face of the Al disc) plus the disc. Disc radius R = 0.23 m
-///      (46 cm OD). Rings measured by ruler against the outer edge:
-///        Side A: r = 13.5–18.5 cm, h ≤ 2.0 cm → V·ρ_Fe = 7.91 kg
-///        Side B: r = 13.0–17.0 cm, h ≤ 1.5 cm → V·ρ_Fe = 4.45 kg
-///        m_belt = 12.36 kg → m_disc = 5.64 kg (residual)
-///      The 5.64 kg disc implies ~12.6 mm average thickness, not 5 mm —
-///      the 5 mm was the thinnest exposed section; the rest of the disc
-///      has a thicker hub/backing structure.
-///        I_belt_A   = m·(r_in² + r_out²)/2 = 0.2075 kg·m²
-///        I_belt_B   = m·(r_in² + r_out²)/2 = 0.1019 kg·m²
-///        I_Al_disc  = ½·m·R²                = 0.1491 kg·m²
-///        I_flywheel                          = 0.4585 kg·m²
-///        I_crank    = g²·I_flywheel = 9.29 kg·m²   (g = 4.5)
+///      (manufacturer spec): a 5 mm uniform Al disc plus two lead
+///      weight-rings, one on each face. Disc radius R = 0.23 m
+///      (46 cm OD); rings measured by ruler against the outer edge:
+///        Disc:   π·R²·t·ρ_Al = π·(0.23)²·0.005·2700 = 2.24 kg
+///        Ring A: r = 13.5–18.5 cm, h ≈ 1.77 cm, ρ_Pb = 11340 → 10.09 kg
+///        Ring B: r = 13.0–17.0 cm, h ≈ 1.33 cm, ρ_Pb = 11340 → 5.67 kg
+///      Both rings sit at ~88% of their measured "less than" thickness
+///      upper bounds. Lead is the only material that closes the mass
+///      budget at the measured ring volumes: iron, brass, copper, and
+///      even bismuth would all need rings thicker than the upper bounds
+///      allow (iron would be 27% over). Spin-bike weight rings are lead
+///      by convention.
+///        I_disc    = ½·m·R²              = 0.0593 kg·m²
+///        I_ring_A  = m·(r_in² + r_out²)/2 = 0.2645 kg·m²
+///        I_ring_B  = m·(r_in² + r_out²)/2 = 0.1299 kg·m²
+///        I_flywheel                       = 0.4537 kg·m²
+///        I_crank   = g²·I_flywheel = 9.19 kg·m²   (g = 4.5)
 ///
 ///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
 ///      Under strict Wouterse, the asymptotic peak brake power at any
 ///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.164 and
-///      α/κ = 1021 W — matching the 1000 W rating to ~2%. The saturation
+///      α/κ = 1020 W — matching the 1000 W rating to ~2%. The saturation
 ///      bell-curve isn't directly observed in our coastdowns (which sit
 ///      in the linear-damping regime ω << ω_c), but it's a real physical
 ///      constraint of permanent-magnet eddy brakes — finite magnetic
@@ -66,7 +69,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///      marketing spec is our anchor for where that ceiling sits.
 ///
 ///   3. Hill shape (R_h, p), κ, and β from a global fit on 46 video-
-///      tracked spindowns spanning R = 0 to 93. RSS = 0.0433 across
+///      tracked spindowns spanning R = 0 to 93. RSS = 0.0431 across
 ///      51792 samples.
 ///
 /// All three are mutually consistent — the data, the geometry, and the
@@ -87,16 +90,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1021 W).
-  // I_crank pinned to 9.29 (anchored to flywheel geometry: 18 kg with
-  // iron belts on both faces, side A at r = 13.5–18.5 cm and side B at
-  // r = 13.0–17.0 cm; disc residual mass implies ~12.6 mm avg thickness).
+  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1020 W).
+  // I_crank pinned to 9.19 (anchored to flywheel geometry: 18 kg with
+  // a 5 mm uniform Al disc + lead weight-rings on both faces, side A
+  // at r = 13.5–18.5 cm and side B at r = 13.0–17.0 cm).
   static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0390;     // 1/s — residual drag at R=0
-  static const double defaultRh = 72.105;       // Hill midpoint
-  static const double defaultP = 1.269;         // Hill sharpness
-  static const double defaultKappa = 0.1617;    // s/rad — 1/ω_c at saturation
-  static const double defaultICrank = 9.29;     // kg·m² (effective, at crank)
+  static const double defaultBeta = 0.0389;     // 1/s — residual drag at R=0
+  static const double defaultRh = 72.858;       // Hill midpoint
+  static const double defaultP = 1.265;         // Hill sharpness
+  static const double defaultKappa = 0.1618;    // s/rad — 1/ω_c at saturation
+  static const double defaultICrank = 9.19;     // kg·m² (effective, at crank)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
@@ -106,11 +109,12 @@ class Calibration {
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // v6 marks a belt-geometry remeasurement (8.0 → 9.29): the heavier ring
+  // v6 marks a belt-geometry remeasurement (8.0 → 9.19): the heavier ring
   // (side A) extends to 18.5 cm radius — significantly further out than
-  // the 16 cm previously assumed — and the disc itself averages ~12.6 mm
-  // thick, not 5 mm. (R_h, p, κ, β) were refit at the new I_crank, so
-  // loading v5 (α, β, I_crank) under the v6 R_h/p/κ defaults would
+  // the 16 cm previously assumed — and the rings are lead, not iron (the
+  // only material consistent with both the radial measurements and the
+  // 18 kg flywheel total). (R_h, p, κ, β) were refit at the new I_crank,
+  // so loading v5 (α, β, I_crank) under the v6 R_h/p/κ defaults would
   // mismatch the torque shape — wipe and reset.
   static const String _keyAlpha = 'cal.alpha.v6';
   static const String _keyBeta = 'cal.betaW.v6';
