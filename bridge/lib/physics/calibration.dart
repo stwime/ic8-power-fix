@@ -39,22 +39,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Anchoring chain — three independent inputs, zero perceived-effort
 /// calibration:
 ///
-///   1. [defaultICrank] from flywheel geometry. 18 kg flywheel (manufacturer
-///      spec), 0.5 cm thick Al disc at 23 cm OD (= 2.24 kg by π·R²·t·ρ_Al),
-///      iron belt at R = 12–17 cm (= 15.76 kg by mass conservation). The
-///      belt is split across both faces of the disc with the two halves
-///      sitting at slightly different radial positions — one side 12–16 cm,
-///      the other 13–17 cm by visual inspection — so the effective belt
-///      inertia is the mean of the two annuli.
-///        I_Al_disc  = ½·m·R²       = 0.059 kg·m²
-///        I_belt     = m·r_eff²      = 0.339 kg·m²   (r_eff² ≈ 0.0214)
-///        I_flywheel = 0.398 kg·m²
-///        I_crank    = g²·I_flywheel = 8.0  kg·m²    (g = 4.5)
+///   1. [defaultICrank] from flywheel geometry. 18 kg total flywheel
+///      (manufacturer spec) decomposes into two iron weight-rings (one on
+///      each face of the Al disc) plus the disc. Disc radius R = 0.23 m
+///      (46 cm OD). Rings measured by ruler against the outer edge:
+///        Side A: r = 13.5–18.5 cm, h ≤ 2.0 cm → V·ρ_Fe = 7.91 kg
+///        Side B: r = 13.0–17.0 cm, h ≤ 1.5 cm → V·ρ_Fe = 4.45 kg
+///        m_belt = 12.36 kg → m_disc = 5.64 kg (residual)
+///      The 5.64 kg disc implies ~12.6 mm average thickness, not 5 mm —
+///      the 5 mm was the thinnest exposed section; the rest of the disc
+///      has a thicker hub/backing structure.
+///        I_belt_A   = m·(r_in² + r_out²)/2 = 0.2075 kg·m²
+///        I_belt_B   = m·(r_in² + r_out²)/2 = 0.1019 kg·m²
+///        I_Al_disc  = ½·m·R²                = 0.1491 kg·m²
+///        I_flywheel                          = 0.4585 kg·m²
+///        I_crank    = g²·I_flywheel = 9.29 kg·m²   (g = 4.5)
 ///
 ///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
 ///      Under strict Wouterse, the asymptotic peak brake power at any
 ///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.164 and
-///      α/κ = 1006 W — matching the 1000 W rating to <1%. The saturation
+///      α/κ = 1021 W — matching the 1000 W rating to ~2%. The saturation
 ///      bell-curve isn't directly observed in our coastdowns (which sit
 ///      in the linear-damping regime ω << ω_c), but it's a real physical
 ///      constraint of permanent-magnet eddy brakes — finite magnetic
@@ -62,7 +66,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///      marketing spec is our anchor for where that ceiling sits.
 ///
 ///   3. Hill shape (R_h, p), κ, and β from a global fit on 46 video-
-///      tracked spindowns spanning R = 0 to 93. RSS = 0.0405 across
+///      tracked spindowns spanning R = 0 to 93. RSS = 0.0433 across
 ///      51792 samples.
 ///
 /// All three are mutually consistent — the data, the geometry, and the
@@ -83,16 +87,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1006 W).
-  // I_crank pinned to 8.0 (anchored to flywheel geometry: 18 kg with
-  // iron belt split across both faces of the disc, one side 12–16 cm
-  // and the other 13–17 cm).
+  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1021 W).
+  // I_crank pinned to 9.29 (anchored to flywheel geometry: 18 kg with
+  // iron belts on both faces, side A at r = 13.5–18.5 cm and side B at
+  // r = 13.0–17.0 cm; disc residual mass implies ~12.6 mm avg thickness).
   static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0386;     // 1/s — residual drag at R=0
-  static const double defaultRh = 83.189;       // Hill midpoint
-  static const double defaultP = 1.214;         // Hill sharpness
-  static const double defaultKappa = 0.1639;    // s/rad — 1/ω_c at saturation
-  static const double defaultICrank = 8.0;      // kg·m² (effective, at crank)
+  static const double defaultBeta = 0.0390;     // 1/s — residual drag at R=0
+  static const double defaultRh = 72.105;       // Hill midpoint
+  static const double defaultP = 1.269;         // Hill sharpness
+  static const double defaultKappa = 0.1617;    // s/rad — 1/ω_c at saturation
+  static const double defaultICrank = 9.29;     // kg·m² (effective, at crank)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
@@ -102,15 +106,16 @@ class Calibration {
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // v5 marks the belt-geometry refinement (7.58 → 8.0): the iron belt
-  // sits at different radial positions on each face of the disc, raising
-  // the effective inertia by ~6%. The Hill shape (R_h, p) and (κ, β) were
-  // refit at the new I_crank, so loading v4 (α, β, I_crank) under the v5
-  // R_h/p/κ defaults would mismatch the torque shape — wipe and reset.
-  static const String _keyAlpha = 'cal.alpha.v5';
-  static const String _keyBeta = 'cal.betaW.v5';
-  static const String _keyICrank = 'cal.iCrank.v5';
-  static const String _keyPowerScale = 'cal.powerScale.v5';
+  // v6 marks a belt-geometry remeasurement (8.0 → 9.29): the heavier ring
+  // (side A) extends to 18.5 cm radius — significantly further out than
+  // the 16 cm previously assumed — and the disc itself averages ~12.6 mm
+  // thick, not 5 mm. (R_h, p, κ, β) were refit at the new I_crank, so
+  // loading v5 (α, β, I_crank) under the v6 R_h/p/κ defaults would
+  // mismatch the torque shape — wipe and reset.
+  static const String _keyAlpha = 'cal.alpha.v6';
+  static const String _keyBeta = 'cal.betaW.v6';
+  static const String _keyICrank = 'cal.iCrank.v6';
+  static const String _keyPowerScale = 'cal.powerScale.v6';
 
   double alpha;
   double beta;
@@ -250,6 +255,10 @@ class Calibration {
     await prefs.remove('cal.betaW.v4');
     await prefs.remove('cal.iCrank.v4');
     await prefs.remove('cal.powerScale.v4');
+    await prefs.remove('cal.alpha.v5');
+    await prefs.remove('cal.betaW.v5');
+    await prefs.remove('cal.iCrank.v5');
+    await prefs.remove('cal.powerScale.v5');
   }
 
   bool get isAtDefaults =>

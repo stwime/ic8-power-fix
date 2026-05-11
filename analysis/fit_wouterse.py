@@ -70,19 +70,23 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 8.0   # kg·m² (effective, at the crank). Derived from geometry,
-                # not fit: 18 kg total flywheel (manufacturer spec for the
-                # flywheel only), 0.5 cm thick Al disk at 23 cm OD
-                # (= 2.24 kg by π·R²·t·ρ_Al), iron belt at R = 12–17 cm
-                # (= 15.76 kg by mass conservation). The belt is split across
-                # both faces of the disk and the two halves sit at slightly
-                # different radial positions — one side 12–16 cm, the other
-                # 13–17 cm by visual inspection — so the effective belt
-                # inertia is the mean of the two annuli.
-                #   I_Al_disk  = ½·m·R²       = 0.059 kg·m²
-                #   I_belt     = m·r_eff²      = 0.339 kg·m²  (r_eff² ≈ 0.0214)
-                #   I_flywheel = 0.398 kg·m²
-                #   I_crank    = g²·I_flywheel = 8.0  kg·m²   (g = 4.5)
+I_CRANK = 9.29  # kg·m² (effective, at the crank). Derived from geometry,
+                # not fit. 18 kg total flywheel (manufacturer spec) decomposes
+                # into two iron weight-rings (one on each face of the Al disc)
+                # plus the disc itself. The rings were measured with a ruler
+                # against the outer edge of the disc (R_disc = 0.23 m):
+                #   Side A: r = 13.5–18.5 cm, h ≤ 2.0 cm  (5 cm wide, 2 cm thick)
+                #   Side B: r = 13.0–17.0 cm, h ≤ 1.5 cm  (4 cm wide, 1.5 cm thick)
+                # At ρ_Fe = 7870 kg/m³, V·ρ caps belt mass at 7.91 + 4.45 =
+                # 12.36 kg. The Al disc gets the residual 5.64 kg by mass
+                # conservation — implying ~12.6 mm average disc thickness,
+                # not 5 mm. The original 5 mm was the thinnest exposed
+                # section; the disc has a thicker hub / backing structure.
+                #   I_belt_A = m·(r_in² + r_out²)/2 = 0.2075 kg·m²
+                #   I_belt_B = m·(r_in² + r_out²)/2 = 0.1019 kg·m²
+                #   I_Al_disc = ½·m·R²              = 0.1491 kg·m²
+                #   I_flywheel                       = 0.4585 kg·m²
+                #   I_crank   = g²·I_flywheel = 9.29 kg·m²   (g = 4.5)
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the Hill shape — α and κ slide along a degenerate ridge unless
@@ -97,7 +101,7 @@ I_CRANK = 8.0   # kg·m² (effective, at the crank). Derived from geometry,
 # α = 165 N·m anchors α/κ ≈ 1000 W, matching the manufacturer's max-
 # output spec. This anchors absolute scale without invoking perceived
 # effort, and keeps the asymptotic saturation ceiling at a defensible,
-# specification-grounded number. RSS = 0.0405 across 51,792 samples.
+# specification-grounded number. RSS = 0.0433 across 51,792 samples.
 #
 # See analysis/physics_first_brake.py for the brake-geometry derivation.
 ALPHA_PINNED = 165.0
