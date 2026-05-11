@@ -2,21 +2,21 @@
 
 If you ride a Schwinn IC8/IC4 (or rebadged Bowflex C6/C7) and pair it
 to Rouvy, MyWhoosh, Zwift, or Garmin, the broadcast power numbers can
-be way off, and inconsistently so. Some riders see an exact match
-against a crank meter, others see 50–100 W gaps in the same zones.
+be way off. Some riders see an exact match against a crank meter,
+others see 50–100 W gaps in the same zones.
 IC Bridge is a small Flutter app that reads the bike's BLE output,
 applies a physics-based correction, and re-broadcasts the result as a
 virtual FTMS power meter your training apps can pair to.
 
 ## Why use this
 
-- **Right shape across the whole dial.** The bike's formula uses cad^1.5 and R^0.83. The actual eddy-current physics is quadratic in cadence and saturates in R. On the reference unit the bike reads low at low R (warm-ups feel harder than they are) and high at race-pace R.
+- **Right shape across the whole dial.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R. On the reference unit the bike reads low at low R (warm-ups feel harder than they are) and high at race-pace R.
 - **Honest power during accelerations.** When you stand up and surge from 80 to 110 rpm, you're also spinning up an 18 kg flywheel. That's an extra 100–150 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt` so the surge reads at full value.
 - **Honest power during coastdowns and recoveries.** When you stop pushing, the bike keeps reporting `R × cad^1.5`. The bridge subtracts the kinetic energy flowing out of the flywheel into the brake, so power drops to zero on time.
-- **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which cleans up `dω/dt` during fast transients.
+- **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which sharpens the acceleration math during fast transients.
 - **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) measures your residual drivetrain drag in 5–10 minutes of seated coastdowns. With an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
 - **Standard FTMS out, no firmware mods.** The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works. The bike doesn't change.
-- **Production-grade plumbing.** Auto-reconnect with backoff if the BLE link drops, wakelock so the bridge phone stays awake, and an FTMS Control Point stub that tells apps "manual brake, no ERG/sim" so they fall back to power-only mode cleanly.
+- **Production-grade plumbing.** Auto-reconnect with backoff if the BLE link drops, wakelock so the bridge phone stays awake, and the bridge tells training apps it has a manual brake (no ERG/sim) so they fall back to power-only mode cleanly.
 
 ## Supported models
 
@@ -58,12 +58,9 @@ your bike's drivetrain drag (5–10 minutes, on-device). If you have
 an external power meter, use the **Power scale** slider on the same
 screen to pin the absolute scale. Default is 100%.
 
-Tests live in `bridge/test/`. `flutter test` should pass after any
-default changes.
-
 ## Limitations
 
-- **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still land 10% off. The Power scale slider absorbs that against an external power meter.
+- **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still be off by 10%. The Power scale slider absorbs that against an external power meter.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
 - **Bell-curve onset is physics-anchored, not data-anchored.** Our spin-downs sit mostly in the linear-damping regime, so the saturating roll-off at the highest R values is fixed by classical eddy-brake theory rather than directly observed.
 
