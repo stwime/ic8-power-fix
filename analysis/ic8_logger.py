@@ -5,7 +5,7 @@ one CSV row per packet. Optionally pairs to an HR strap (0x180D / 0x2A37).
 
 Usage:
     pip install bleak
-    python ic8_logger.py --output session.csv
+    python analysis/ic8_logger.py --output session.csv
     # ride / sweep R+cadence
     # Ctrl+C to stop
 
@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-# Allow running as `python logger/ic8_logger.py` from project root.
+# Allow running as `python analysis/ic8_logger.py` from project root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from analysis.decode_ftms import decode_indoor_bike_data  # noqa: E402
 

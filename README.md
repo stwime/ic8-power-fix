@@ -32,14 +32,7 @@ an IC8 and apply directly.
 
 ## What the bridge does
 
-```mermaid
-flowchart LR
-    Bike["<b>IC Bike</b><br/>manual dial"]
-    Bridge["<b>Bridge phone</b><br/><i>P = τ_brake(R,ω)·ω + I·ω·dω/dt</i>"]
-    App["<b>Training app</b><br/>Rouvy · MyWhoosh<br/>Zwift · Garmin"]
-    Bike -- "FTMS 0x1826 + CSC 0x1816<br/>R · cadence · per-rev crank timing" --> Bridge
-    Bridge -- "FTMS 0x1826 + Cycling Power 0x1818<br/>corrected wattage" --> App
-```
+![Bridge data flow: bike to bridge phone to training app](docs/figures/bridge_diagram.svg)
 
 The bridge reads two BLE services from the bike: **FTMS Indoor Bike Data** (cadence, resistance level, the bike's own power estimate) and **CSC Cycling Speed and Cadence** (per-revolution crank counts and event times). It runs the physics correction on every sample, then advertises itself as a virtual FTMS bike + cycling power meter named **"IC Bike (corrected)"** (configurable in Settings). Your training app pairs to the bridge instead of the bike.
 
@@ -143,28 +136,19 @@ Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area i
 ## Repository layout
 
 ```
-bridge/                          Flutter app, the bridge itself
-bridge/lib/ble/                  BLE central + peripheral
-bridge/lib/physics/              corrector + Wouterse coastdown fit
-                                 (what Auto-calibrate runs on-device)
-analysis/parse_nrf_log.py        nRF Connect log -> CSV (FTMS + CSC joined)
-analysis/decode_ftms.py          FTMS Indoor Bike Data parser
-analysis/decode_csc.py           CSC measurement parser
-analysis/track_crank.py          per-frame crank-angle PCA tracker on a
-                                 spindown video (mod-π output)
-analysis/extract_spindowns_from_video.py  segments active runs in a tracked
-                                          crank-angle video
-analysis/spindown_fit_video.py   per-segment exponential decay fit on raw
-                                 mod-π crank angles
-analysis/curate_spindowns.py     interactive in/out-marker tool over the
-                                 video coastdown candidates
-analysis/aggregate_spindowns.py  merges curated bounds into one per-rev ω(t)
-                                 dataset (data/calibration/all_spindowns.csv)
-analysis/fit_wouterse.py         strict-Wouterse 5-param fit on the curated
-                                 dataset (one-shot trajectory ODE fit)
-analysis/plot_readme_figures.py  regenerates power_curves.png and
-                                 indoor_surge.png from the bridge defaults
-                                 + the canonical R=25 acceleration BLE log
-data/calibration/                BLE logs + crank videos used to fit defaults
-docs/figures/                    README plots
+bridge/            Flutter app (the bridge itself)
+  lib/ble/           BLE central + peripheral
+  lib/physics/       corrector + Wouterse coastdown fit
+                     (what Auto-calibrate runs on-device)
+analysis/          Calibration pipeline (Python): nRF Connect log → CSV
+                   → video crank tracking → spin-down curation →
+                   strict-Wouterse ODE fit. Also ic8_logger.py for raw
+                   BLE capture and plot_readme_figures.py for the README
+                   figures. Each script documents its role in its top
+                   docstring.
+docs/figures/      README plots and the bridge data-flow diagram.
 ```
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE). Free to use, modify, and share for personal, research, hobby, and other noncommercial purposes. Commercial use is not permitted.

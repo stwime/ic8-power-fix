@@ -1,0 +1,6 @@
+flowchart LR
+    Bike["<b>IC Bike</b><br/>manual dial"]
+    Bridge["<b>Bridge phone</b><br/><i>P = τ_brake(R,ω)·ω + I·ω·dω/dt</i>"]
+    App["<b>Training app</b><br/>Rouvy · MyWhoosh<br/>Zwift · Garmin"]
+    Bike -- "FTMS 0x1826 + CSC 0x1816<br/>R · cadence · per-rev crank timing" --> Bridge
+    Bridge -- "FTMS 0x1826 + Cycling Power 0x1818<br/>corrected wattage" --> App
