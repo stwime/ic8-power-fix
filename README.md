@@ -10,13 +10,13 @@ virtual FTMS power meter your training apps can pair to.
 
 ## Why use this
 
-- **Steady-state power across the whole dial, not a flat offset.** The bike's broadcast formula uses cad^1.5 and R^0.83 — both wrong for an eddy-current brake. Real eddy physics gives a quadratic cadence dependence in the linear regime and a saturating brake-curve in R. On the reference unit the bike under-reads at low R (recovery and warm-up zones look harder than they are) and over-reads at high R (race-pace zones look easier). The bridge replaces both with the correct shape.
-- **Honest power during accelerations.** When you stand up and surge from 80 → 110 rpm, your real input includes spinning up the 18 kg flywheel — typically an extra 100–150 W on top of the steady term. The bike ignores this entirely (its formula sees only the current cadence and R) so your surges look weak. The bridge adds the kinetic-energy term `I·ω·dω/dt` and the surge reads at full value.
-- **Honest power during coastdowns, recoveries, and interval transitions.** When you stop pushing, the bike keeps reporting `R × cad^1.5` even though you're not doing work. The bridge subtracts the kinetic energy flowing *out* of the flywheel into the brake, so power drops to zero on time. Intervals, hard-to-easy transitions, and standing-to-seated changes all read right.
-- **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field. The KE term needs `dω/dt`, so timing precision matters during fast transients.
-- **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) measures your residual drivetrain drag in 5–10 minutes of seated coastdowns. If you have an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
-- **No firmware mods, standard FTMS out.** The bike doesn't change. The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works.
-- **Production-grade plumbing.** Auto-reconnect with backoff if the BLE link drops, wakelock so the bridge phone stays awake, and an FTMS Control Point stub that politely tells apps "manual brake, no ERG/sim" so they fall back to power-only mode cleanly.
+- **Right shape across the whole dial.** The bike's formula uses cad^1.5 and R^0.83. The actual eddy-current physics is quadratic in cadence and saturates in R. On the reference unit the bike reads low at low R (warm-ups feel harder than they are) and high at race-pace R.
+- **Honest power during accelerations.** When you stand up and surge from 80 to 110 rpm, you're also spinning up an 18 kg flywheel. That's an extra 100–150 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt` so the surge reads at full value.
+- **Honest power during coastdowns and recoveries.** When you stop pushing, the bike keeps reporting `R × cad^1.5`. The bridge subtracts the kinetic energy flowing out of the flywheel into the brake, so power drops to zero on time.
+- **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which cleans up `dω/dt` during fast transients.
+- **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) measures your residual drivetrain drag in 5–10 minutes of seated coastdowns. With an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
+- **Standard FTMS out, no firmware mods.** The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works. The bike doesn't change.
+- **Production-grade plumbing.** Auto-reconnect with backoff if the BLE link drops, wakelock so the bridge phone stays awake, and an FTMS Control Point stub that tells apps "manual brake, no ERG/sim" so they fall back to power-only mode cleanly.
 
 ## Supported models
 
@@ -43,9 +43,9 @@ flowchart LR
 
 The bridge reads two BLE services from the bike: **FTMS Indoor Bike Data** (cadence, resistance level, the bike's own power estimate) and **CSC Cycling Speed and Cadence** (per-revolution crank counts and event times). It runs the physics correction on every sample, then advertises itself as a virtual FTMS bike + cycling power meter named **"IC Bike (corrected)"** (configurable in Settings). Your training app pairs to the bridge instead of the bike.
 
-Heart rate is handled the usual way — pair your HR strap directly to your training app. The bridge doesn't try to be a HR proxy.
+Heart rate works the usual way: pair your strap directly to your training app. The bridge isn't a HR proxy.
 
-There's no resistance control. The bike has a manual dial, so ERG mode isn't possible regardless of what you pair it to.
+There's no resistance control. The bike has a manual dial, so ERG mode isn't possible regardless of what you pair to.
 
 ## Build and run
 
@@ -61,20 +61,18 @@ bridge starts. From your training app on a separate device, pair to
 **"IC Bike (corrected)"** as a power meter and as an FTMS bike.
 
 If your numbers feel off, open Settings → **Auto-calibrate** to fit
-your bike's drivetrain residual drag (5–10 minutes, on-device). If
-you have an external power meter, use the **Power scale** slider on
-the same screen to pin the absolute scale. Default is 100% — the
-shipped constants already absorb the known offsets on the reference
-unit.
+your bike's drivetrain drag (5–10 minutes, on-device). If you have
+an external power meter, use the **Power scale** slider on the same
+screen to pin the absolute scale. Default is 100%.
 
 Tests live in `bridge/test/`. `flutter test` should pass after any
 default changes.
 
 ## Limitations
 
-- **Absolute scale depends on your unit.** Spin-downs alone can't tell brake strength from flywheel inertia apart (they multiply in the physics). We pin both from the reference IC8 — geometry for inertia, the 1000 W max-output spec for brake strength. Another IC8 with different manufacturing tolerances could still land 10% off; the Power scale slider absorbs that, but pinning it requires an external power meter.
-- **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence; if CSC isn't available it clamps and slightly underestimates power at very high rpm.
-- **Bell-curve onset is physics-anchored, not data-anchored.** Our spin-downs sit mostly in the linear-damping regime, so the saturating roll-off at the highest R values is fixed by classical eddy-brake theory rather than directly observed. Disambiguating it would need either an independent magnetic-field measurement or coastdowns from much higher peak cadence.
+- **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still land 10% off. The Power scale slider absorbs that against an external power meter.
+- **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
+- **Bell-curve onset is physics-anchored, not data-anchored.** Our spin-downs sit mostly in the linear-damping regime, so the saturating roll-off at the highest R values is fixed by classical eddy-brake theory rather than directly observed.
 
 ---
 
@@ -85,7 +83,7 @@ dial:
 
 $$P_{\text{IC8}} \approx 0.019 \cdot R^{0.83} \cdot \text{cad}^{1.5}$$
 
-Both exponents are wrong. Real eddy-current physics gives $P \propto \omega^2$ in the linear regime, not $\text{cad}^{1.5}$, and the absolute scale isn't fixed — it drifts unit-to-unit and across the dial. That's why forum reports disagree about whether the bike reads high or low.
+Both exponents are wrong. Real eddy-current physics gives $P \propto \omega^2$ in the linear regime, not $\text{cad}^{1.5}$, and the absolute scale drifts unit-to-unit and across the dial. That's why forum reports disagree about whether the bike reads high or low.
 
 The shape of the gap is consistent though. Dashed lines are what the bike broadcasts, solid lines are what the bridge re-broadcasts:
 
@@ -95,7 +93,7 @@ The two curves cross around $R \approx 45$ at moderate cadences. Below that the 
 
 ## The fix
 
-The IC8 is a permanent-magnet eddy brake on an aluminum disc. Classical Wouterse / Smythe / Wiederick theory gives the brake torque as a bell curve in $\omega$ — linear below the critical speed $\omega_c$, falling above it as induced eddy currents partially cancel the source flux:
+The IC8 is a permanent-magnet eddy brake on an aluminum disc. Classical Wouterse / Smythe / Wiederick theory gives the brake torque as a bell curve in $\omega$, linear below the critical speed $\omega_c$ and falling above it as induced eddy currents partially cancel the source flux:
 
 $$\tau_{\text{brake}}(R,\omega) = \tau_{\max}(R) \cdot \frac{2(\omega/\omega_c(R))}{1 + (\omega/\omega_c(R))^2}$$
 
@@ -114,11 +112,11 @@ $$H(R) = \frac{R^p}{R^p + R_h^p}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \fr
 Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down (46 video-tracked segments spanning $R = 0$ to 93; `analysis/fit_wouterse.py`):
 
 - $\alpha = 165$ N·m, $\beta = 0.0389$ s⁻¹, $\kappa = 0.162$ s/rad, $R_h = 72.9$, $p = 1.27$.
-- $\alpha/\kappa = 1020$ W — the strict-Wouterse asymptotic peak brake power, within 2% of the manufacturer's 1000 W max-output spec.
+- $\alpha/\kappa = 1020$ W, the strict-Wouterse asymptotic peak brake power. Within 2% of the manufacturer's 1000 W max-output spec.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-$R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dial-to-magnet mapping, so they ship as fixed defaults. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$. $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data — only their ratio appears in $I\,\dot\omega = -\tau$ — so per-bike $\alpha$ fitting would just absorb any $I_{\text{crank}}$ deviation into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
+$R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dial-to-magnet mapping, so they ship as fixed defaults. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$. $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so per-bike $\alpha$ fitting just absorbs $I_{\text{crank}}$ deviations into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
 
 **Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a uniform 5 mm Al disc ($R = 23$ cm) with two lead weight-rings measured by ruler:
 
@@ -126,11 +124,11 @@ $R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dia
 - Ring A ($r$ from 13.5 to 18.5 cm, $h \approx 1.77$ cm, $\rho_{\text{Pb}} = 11{,}340$): 10.09 kg, $I = 0.265$ kg·m².
 - Ring B ($r$ from 13.0 to 17.0 cm, $h \approx 1.33$ cm, same density): 5.67 kg, $I = 0.130$ kg·m².
 
-Lead is the only material that closes the mass budget at the measured ring volumes — iron, brass, copper, and even bismuth all need rings thicker than the measured upper bounds (iron by 27%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.19$ kg·m². Disc and rings sit at similar effective radii, so $I_{\text{crank}}$ is insensitive to how mass redistributes between them (robust to ~10%).
+Lead is the only material that closes the mass budget at the measured ring volumes. Iron, brass, copper, and even bismuth all need rings thicker than the measured upper bounds (iron by 27%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.19$ kg·m².
 
-These three anchors — disc geometry, ring geometry, and the 1000 W max spec — are independent. They land on a calibration self-consistent with both the data (RSS = 0.0431 across 51,792 samples) and the bike's design specs.
+Disc geometry, ring geometry, and the 1000 W max spec are three independent anchors. They land on a calibration consistent with the data (RSS = 0.0431 across 51,792 samples).
 
-The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term all move in lockstep. Default 1.0; tune against an external power meter when one is available.
+The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term move in lockstep. Default 1.0; tune against an external power meter when one is available.
 
 ## Reality check: the model decomposes an acceleration cleanly
 
