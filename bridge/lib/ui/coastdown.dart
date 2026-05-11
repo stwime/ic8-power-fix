@@ -153,11 +153,11 @@ class _CoastdownPageState extends State<CoastdownPage> {
                 '1. Set the resistance dial to a low number (try 5).\n'
                 '2. Pedal until your cadence is at least 70 rpm.\n'
                 '3. Quickly lift both feet off the pedals at the same time so '
-                'they spin freely — a slow or one-foot-at-a-time release adds '
+                'they spin freely. A slow or one-foot-at-a-time release adds '
                 'drag and ruins the measurement. Keep your hands off the dial.\n'
-                '4. Wait for the pedals to stop spinning completely — the '
+                '4. Wait for the pedals to stop spinning completely. The '
                 'measurement is not finished until they do.\n'
-                '5. Change the resistance and repeat — at least 3 different '
+                '5. Change the resistance and repeat, at least 3 different '
                 'resistance levels in total. More levels (and more coastdowns '
                 'per level) give a tighter fit.',
                 style: TextStyle(color: colorScheme.onSecondaryContainer)),
@@ -185,7 +185,7 @@ class _CoastdownPageState extends State<CoastdownPage> {
 
     if (running > 0) {
       return _statusBanner(_BannerTone.success,
-          'Measuring at resistance ${_detector.currentRunR} — wait for the '
+          'Measuring at resistance ${_detector.currentRunR}. Wait for the '
           'pedals to stop completely. Keep your hands off the dial. '
           'Cadence: '
           '${_detector.currentRunCadence?.toStringAsFixed(0)} rpm.');
@@ -339,6 +339,6 @@ class _FitPreviewDialog extends StatelessWidget {
   static String _overall(double rms, double maxResid) {
     if (rms < _rmsExcellent && maxResid < _maxResidExcellent) return 'Excellent';
     if (rms < _rmsGood && maxResid < _maxResidGood) return 'Good';
-    return 'Fair — consider redoing with steadier coastdowns';
+    return 'Fair. Consider redoing with steadier coastdowns';
   }
 }

@@ -93,7 +93,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _saveAlpha() async {
     final messenger = ScaffoldMessenger.of(context);
-    final v = double.tryParse(_alphaCtrl.text);
+    final v = double.tryParse(_alphaCtrl.text.replaceAll(',', '.'));
     if (v == null) {
       messenger.showSnackBar(const SnackBar(
           content: Text('That is not a valid number')));
@@ -107,7 +107,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _saveBeta() async {
     final messenger = ScaffoldMessenger.of(context);
-    final v = double.tryParse(_betaCtrl.text);
+    final v = double.tryParse(_betaCtrl.text.replaceAll(',', '.'));
     if (v == null) {
       messenger.showSnackBar(const SnackBar(
           content: Text('That is not a valid number')));
@@ -154,7 +154,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           style: Theme.of(context).textTheme.headlineMedium),
                       Text(s == null
                           ? 'Connect to your bike to see your live power here'
-                          : 'Live power — updates as you adjust the slider',
+                          : 'Live power, updates as you adjust the slider',
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
                   )),
@@ -249,6 +249,7 @@ class _SettingsPageState extends State<SettingsPage> {
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
+              labelText: 'Bike name',
               hintText: AppPrefs.defaultProxyName,
             ),
           ),
@@ -316,20 +317,24 @@ class _SettingsPageState extends State<SettingsPage> {
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       SizedBox(
         width: 96,
-        child: Text(label),
+        child: ExcludeSemantics(child: Text(label)),
       ),
-      Expanded(child: TextField(
-        controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        onSubmitted: (_) => onSave(),
-        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-        decoration: InputDecoration(
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          border: const OutlineInputBorder(),
-          helperText: isDefault
-              ? 'default'
-              : 'default ${defaultValue.toStringAsFixed(frac)}',
+      Expanded(child: Semantics(
+        label: label,
+        textField: true,
+        child: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onSubmitted: (_) => onSave(),
+          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            border: const OutlineInputBorder(),
+            helperText: isDefault
+                ? 'default'
+                : 'default ${defaultValue.toStringAsFixed(frac)}',
+          ),
         ),
       )),
     ]);

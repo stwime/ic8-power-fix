@@ -131,7 +131,11 @@ rider stops pushing and the flywheel coasts back down to ~50 rpm:
 
 ![Indoor acceleration](docs/figures/indoor_surge.png)
 
-Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake). The same shape shows up on a 4iiii crank meter during an outdoor acceleration: different sensor, different system, same physics.
+Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake).
+
+The same shape shows up on a 4iiii crank meter during an outdoor acceleration. Different sensor, different system, same physics:
+
+![Outdoor acceleration on a 4iiii crank meter](docs/figures/outdoor_surge.png)
 
 ## Repository layout
 
@@ -143,9 +147,12 @@ bridge/            Flutter app (the bridge itself)
 analysis/          Calibration pipeline (Python): nRF Connect log → CSV
                    → video crank tracking → spin-down curation →
                    strict-Wouterse ODE fit. Also ic8_logger.py for raw
-                   BLE capture and plot_readme_figures.py for the README
-                   figures. Each script documents its role in its top
-                   docstring.
+                   BLE capture, plot_readme_figures.py for the README
+                   figures, and physics_first_brake.py for an independent
+                   geometry-only sanity check (not on the calibration
+                   path). Each script documents its role in its top
+                   docstring. Install deps with
+                   `pip install -r analysis/requirements.txt`.
 docs/figures/      README plots and the bridge data-flow diagram.
 ```
 

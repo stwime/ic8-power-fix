@@ -73,10 +73,10 @@ class _HomePageState extends State<HomePage> {
             _status = 'Connecting…';
             _tone = _StatusTone.working;
           case BridgeConnState.connected:
-            _status = 'Connected — sending power to your training app';
+            _status = 'Connected, sending power to your training app';
             _tone = _StatusTone.connected;
           case BridgeConnState.reconnecting:
-            _status = 'Connection lost — trying to reconnect…';
+            _status = 'Connection lost, trying to reconnect…';
             _tone = _StatusTone.warning;
           case BridgeConnState.disconnected:
             _status = 'Stopped';
@@ -217,7 +217,7 @@ class _HomePageState extends State<HomePage> {
     }
     if (either(BluetoothLowEnergyState.unknown)) {
       return (
-        message: 'Bluetooth is not authorized yet — tap to allow it.',
+        message: 'Bluetooth is not authorized yet. Tap to allow it.',
         fixable: true,
       );
     }
