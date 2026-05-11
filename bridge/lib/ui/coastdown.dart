@@ -101,14 +101,19 @@ class _CoastdownPageState extends State<CoastdownPage> {
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _instructions(context),
+          const _Instructions(),
           const SizedBox(height: 12),
           ValueListenableBuilder<IC8Sample?>(
             valueListenable: _lastSample,
             builder: (ctx, _, child) => _liveStatus(ctx),
           ),
           const SizedBox(height: 12),
-          Expanded(child: _pointsTable(context)),
+          Expanded(
+            child: _PointsTable(
+              points: _points,
+              onRemove: (i) => setState(() => _points.removeAt(i)),
+            ),
+          ),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: OutlinedButton.icon(
@@ -132,7 +137,56 @@ class _CoastdownPageState extends State<CoastdownPage> {
     );
   }
 
-  Widget _instructions(BuildContext context) {
+  Widget _liveStatus(BuildContext context) {
+    final connected = widget.central.state == BridgeConnState.connected;
+    if (!connected) {
+      return const _StatusBanner(
+        tone: _BannerTone.warning,
+        text: 'Not connected to your bike. Go back to the home screen and '
+            'tap Find bike first.',
+      );
+    }
+    if (!_seenAnyCsc && _last != null) {
+      return const _StatusBanner(
+        tone: _BannerTone.error,
+        text: 'Your bike is not reporting cadence in real-time, so calibration '
+            'cannot run. Make sure the bike is on and the pedals are turning.',
+      );
+    }
+    final running = _detector.currentRunLength;
+    final cad = _last?.cadenceRpmCsc ?? _last?.ftms.cadenceRpm ?? 0;
+    final r = _last?.ftms.resistance ?? 0;
+
+    if (running > 0) {
+      return _StatusBanner(
+        tone: _BannerTone.success,
+        text: 'Measuring at resistance ${_detector.currentRunR}. Wait for the '
+            'pedals to stop completely. Keep your hands off the dial. '
+            'Cadence: '
+            '${_detector.currentRunCadence?.toStringAsFixed(0)} rpm.',
+      );
+    }
+    if (cad >= 70) {
+      return _StatusBanner(
+        tone: _BannerTone.info,
+        text: 'Lift both feet off the pedals at the same time to start a '
+            'measurement. Cadence: ${cad.toStringAsFixed(0)} rpm at '
+            'resistance $r.',
+      );
+    }
+    return _StatusBanner(
+      tone: _BannerTone.idle,
+      text: 'Pedal up to at least 70 rpm to begin. '
+          'Cadence: ${cad.toStringAsFixed(0)} rpm at resistance $r.',
+    );
+  }
+}
+
+class _Instructions extends StatelessWidget {
+  const _Instructions();
+
+  @override
+  Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
       color: colorScheme.secondaryContainer,
@@ -166,42 +220,15 @@ class _CoastdownPageState extends State<CoastdownPage> {
       ),
     );
   }
+}
 
-  Widget _liveStatus(BuildContext context) {
-    final connected = widget.central.state == BridgeConnState.connected;
-    if (!connected) {
-      return _statusBanner(_BannerTone.warning,
-          'Not connected to your bike. Go back to the home screen and '
-          'tap Find bike first.');
-    }
-    if (!_seenAnyCsc && _last != null) {
-      return _statusBanner(_BannerTone.error,
-          'Your bike is not reporting cadence in real-time, so calibration '
-          'cannot run. Make sure the bike is on and the pedals are turning.');
-    }
-    final running = _detector.currentRunLength;
-    final cad = _last?.cadenceRpmCsc ?? _last?.ftms.cadenceRpm ?? 0;
-    final r = _last?.ftms.resistance ?? 0;
+class _StatusBanner extends StatelessWidget {
+  final _BannerTone tone;
+  final String text;
+  const _StatusBanner({required this.tone, required this.text});
 
-    if (running > 0) {
-      return _statusBanner(_BannerTone.success,
-          'Measuring at resistance ${_detector.currentRunR}. Wait for the '
-          'pedals to stop completely. Keep your hands off the dial. '
-          'Cadence: '
-          '${_detector.currentRunCadence?.toStringAsFixed(0)} rpm.');
-    }
-    if (cad >= 70) {
-      return _statusBanner(_BannerTone.info,
-          'Lift both feet off the pedals at the same time to start a '
-          'measurement. Cadence: ${cad.toStringAsFixed(0)} rpm at '
-          'resistance $r.');
-    }
-    return _statusBanner(_BannerTone.idle,
-        'Pedal up to at least 70 rpm to begin. '
-        'Cadence: ${cad.toStringAsFixed(0)} rpm at resistance $r.');
-  }
-
-  Widget _statusBanner(_BannerTone tone, String text) {
+  @override
+  Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final Color bg;
     final Color fg;
@@ -209,23 +236,18 @@ class _CoastdownPageState extends State<CoastdownPage> {
       case _BannerTone.idle:
         bg = colorScheme.surfaceContainerHigh;
         fg = colorScheme.onSurface;
-        break;
       case _BannerTone.info:
         bg = colorScheme.secondaryContainer;
         fg = colorScheme.onSecondaryContainer;
-        break;
       case _BannerTone.success:
         bg = colorScheme.primaryContainer;
         fg = colorScheme.onPrimaryContainer;
-        break;
       case _BannerTone.warning:
         bg = colorScheme.tertiaryContainer;
         fg = colorScheme.onTertiaryContainer;
-        break;
       case _BannerTone.error:
         bg = colorScheme.errorContainer;
         fg = colorScheme.onErrorContainer;
-        break;
     }
     return Semantics(
       liveRegion: true,
@@ -240,13 +262,31 @@ class _CoastdownPageState extends State<CoastdownPage> {
       ),
     );
   }
+}
 
-  Widget _pointsTable(BuildContext context) {
-    if (_points.isEmpty) {
-      return Center(child: Text('No measurements yet',
-          style: Theme.of(context).textTheme.bodyMedium));
-    }
+class _PointsTable extends StatelessWidget {
+  final List<CoastdownPoint> points;
+  final void Function(int index) onRemove;
+  const _PointsTable({required this.points, required this.onRemove});
+
+  // Per-coastdown fit quality from R² of ln(ω) vs. t. Excellent ≥ 0.99 reflects
+  // the empirical noise floor of a clean lift-off; below 0.97 usually means a
+  // foot-drag or dial-touch contaminated the run.
+  static const double _r2Excellent = 0.99;
+  static const double _r2Good = 0.97;
+
+  static String _qualityLabel(double r2) {
+    if (r2 >= _r2Excellent) return 'Excellent';
+    if (r2 >= _r2Good) return 'Good';
+    return 'Fair';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final body = Theme.of(context).textTheme.bodyMedium;
+    if (points.isEmpty) {
+      return Center(child: Text('No measurements yet', style: body));
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Semantics(
         header: true,
@@ -262,9 +302,9 @@ class _CoastdownPageState extends State<CoastdownPage> {
       ),
       const Divider(height: 1),
       Expanded(child: ListView.builder(
-        itemCount: _points.length,
+        itemCount: points.length,
         itemBuilder: (ctx, i) {
-          final p = _points[i];
+          final p = points[i];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(children: [
@@ -273,25 +313,13 @@ class _CoastdownPageState extends State<CoastdownPage> {
               IconButton(
                 icon: const Icon(Icons.close, size: 16),
                 tooltip: 'Remove',
-                onPressed: () => setState(() => _points.removeAt(i)),
+                onPressed: () => onRemove(i),
               ),
             ]),
           );
         },
       )),
     ]);
-  }
-
-  // Per-coastdown fit quality from R² of ln(ω) vs. t. Excellent ≥ 0.99 reflects
-  // the empirical noise floor of a clean lift-off; below 0.97 usually means a
-  // foot-drag or dial-touch contaminated the run.
-  static const double _r2Excellent = 0.99;
-  static const double _r2Good = 0.97;
-
-  static String _qualityLabel(double r2) {
-    if (r2 >= _r2Excellent) return 'Excellent';
-    if (r2 >= _r2Good) return 'Good';
-    return 'Fair';
   }
 }
 

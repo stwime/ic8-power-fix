@@ -95,21 +95,21 @@ class IC8Central {
   static const _reconnectBackoffSeconds = [1, 2, 4, 8, 15, 30];
 
   /// Stream discovered peripherals advertising the FTMS service. UI uses this.
+  /// The inner `manager.discovered` subscription lives inside the async*
+  /// generator, so a `cancel()` on the consumer's subscription propagates
+  /// here and releases it — important because pair attempts may be retried
+  /// many times in one session.
   Stream<({Peripheral peripheral, String name, int rssi})> scanForBikes() async* {
-    final controller =
-        StreamController<({Peripheral peripheral, String name, int rssi})>();
-    final sub = manager.discovered.listen((event) {
+    await manager.startDiscovery();
+    await for (final event in manager.discovered) {
       final adv = event.advertisement;
       final name = adv.name ?? '';
       final isFtms = adv.serviceUUIDs.any(
           (u) => u.toString().toLowerCase().contains('1826'));
       if (isFtms || name.toUpperCase().startsWith('IC')) {
-        controller.add((peripheral: event.peripheral, name: name, rssi: event.rssi));
+        yield (peripheral: event.peripheral, name: name, rssi: event.rssi);
       }
-    });
-    await manager.startDiscovery();
-    yield* controller.stream;
-    await sub.cancel();
+    }
   }
 
   Future<void> stopScan() async => manager.stopDiscovery();

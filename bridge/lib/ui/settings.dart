@@ -101,6 +101,8 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     await widget.calibration.setAlpha(v);
     if (!mounted) return;
+    // Calibration is mutable; rebuild so isAtDefaults (and the reset action's
+    // enable state) reflects the new value.
     setState(() {});
     messenger.showSnackBar(const SnackBar(content: Text('Saved')));
   }
@@ -115,6 +117,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     await widget.calibration.setBeta(v);
     if (!mounted) return;
+    // See _saveAlpha — rebuild for isAtDefaults.
     setState(() {});
     messenger.showSnackBar(const SnackBar(content: Text('Saved')));
   }
@@ -122,6 +125,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final cal = widget.calibration;
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -137,7 +141,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _section('Power preview'),
+          const _Section('Power preview'),
           ValueListenableBuilder<IC8Sample?>(
             valueListenable: _lastSample,
             builder: (context, s, _) {
@@ -150,12 +154,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('$pwr W',
-                          style: Theme.of(context).textTheme.headlineMedium),
+                      Text('$pwr W', style: textTheme.headlineMedium),
                       Text(s == null
                           ? 'Connect to your bike to see your live power here'
                           : 'Live power, updates as you adjust the slider',
-                          style: Theme.of(context).textTheme.bodySmall),
+                          style: textTheme.bodySmall),
                     ],
                   )),
                 ]),
@@ -164,12 +167,12 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
 
           const SizedBox(height: 16),
-          _section('Power scale'),
+          const _Section('Power scale'),
           Text('Use this if your power numbers feel too high or too low '
               'compared to another power meter you trust. Slide right to '
               'increase your power, left to decrease. Scales steady-state '
               'and acceleration response by the same factor.',
-              style: Theme.of(context).textTheme.bodySmall),
+              style: textTheme.bodySmall),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: Slider(
@@ -182,10 +185,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   Calibration.powerScaleMin, Calibration.powerScaleMax),
               label: '${(cal.powerScale * 100).round()}%',
               onChanged: (v) {
+                // In-memory only — onChangeEnd persists. Cheap rebuilds drive
+                // the live-preview tile and the % label below.
                 setState(() => cal.powerScale = v);
               },
               onChangeEnd: (v) async {
                 await cal.setPowerScale(v);
+                // Calibration is mutable; rebuild so isAtDefaults (and the
+                // reset-action enable state) reflects the persisted value.
                 if (mounted) setState(() {});
               },
             )),
@@ -193,25 +200,25 @@ class _SettingsPageState extends State<SettingsPage> {
               width: 64,
               child: Text('${(cal.powerScale * 100).round()}%',
                   textAlign: TextAlign.right,
-                  style: Theme.of(context).textTheme.titleMedium),
+                  style: textTheme.titleMedium),
             ),
           ]),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Lower', style: Theme.of(context).textTheme.bodySmall),
-              Text('Default', style: Theme.of(context).textTheme.bodySmall),
-              Text('Higher', style: Theme.of(context).textTheme.bodySmall),
+              Text('Lower', style: textTheme.bodySmall),
+              Text('Default', style: textTheme.bodySmall),
+              Text('Higher', style: textTheme.bodySmall),
             ]),
           ),
 
           const SizedBox(height: 24),
-          _section('Calibrate to your bike'),
+          const _Section('Calibrate to your bike'),
           Text('Each bike is slightly different. The auto-calibration takes '
               'a few minutes and measures how your bike\'s flywheel slows '
               'down at different resistance levels. This makes the power '
               'numbers match your bike more accurately.',
-              style: Theme.of(context).textTheme.bodySmall),
+              style: textTheme.bodySmall),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: () async {
@@ -233,14 +240,21 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
 
           const SizedBox(height: 24),
-          _advancedSection(cal),
+          _AdvancedSection(
+            alphaController: _alphaCtrl,
+            betaController: _betaCtrl,
+            currentAlpha: cal.alpha,
+            currentBeta: cal.beta,
+            onSaveAlpha: _saveAlpha,
+            onSaveBeta: _saveBeta,
+          ),
 
           const SizedBox(height: 24),
-          _section('Bike name in training apps'),
+          const _Section('Bike name in training apps'),
           Text('How your bike appears when Zwift, Rouvy, or MyWhoosh look for '
               'a power meter. The change takes effect the next time you '
               'connect the bike.',
-              style: Theme.of(context).textTheme.bodySmall),
+              style: textTheme.bodySmall),
           const SizedBox(height: 8),
           TextField(
             controller: _nameCtrl,
@@ -257,62 +271,102 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
+}
 
-  Widget _advancedSection(Calibration cal) {
+class _Section extends StatelessWidget {
+  final String label;
+  const _Section(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(label,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              )),
+    );
+  }
+}
+
+class _AdvancedSection extends StatelessWidget {
+  final TextEditingController alphaController;
+  final TextEditingController betaController;
+  final double currentAlpha;
+  final double currentBeta;
+  final Future<void> Function() onSaveAlpha;
+  final Future<void> Function() onSaveBeta;
+
+  const _AdvancedSection({
+    required this.alphaController,
+    required this.betaController,
+    required this.currentAlpha,
+    required this.currentBeta,
+    required this.onSaveAlpha,
+    required this.onSaveBeta,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.zero,
       title: Text('Advanced',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               )),
       subtitle: Text('Manually edit the resistance curve',
-          style: Theme.of(context).textTheme.bodySmall),
+          style: textTheme.bodySmall),
       children: [
         const SizedBox(height: 8),
         Text(
             'These two numbers describe how each resistance level affects '
             'power. Most people should use Auto-calibrate above instead of '
             'editing them by hand.',
-            style: Theme.of(context).textTheme.bodySmall),
+            style: textTheme.bodySmall),
         const SizedBox(height: 12),
-        _editableNumberRow(
+        _EditableNumberRow(
           label: 'Brake',
-          controller: _alphaCtrl,
+          controller: alphaController,
           defaultValue: Calibration.defaultAlpha,
-          currentValue: cal.alpha,
+          currentValue: currentAlpha,
           frac: 4,
-          onSave: _saveAlpha,
+          onSave: onSaveAlpha,
         ),
         const SizedBox(height: 8),
-        _editableNumberRow(
+        _EditableNumberRow(
           label: 'Friction',
-          controller: _betaCtrl,
+          controller: betaController,
           defaultValue: Calibration.defaultBeta,
-          currentValue: cal.beta,
+          currentValue: currentBeta,
           frac: 4,
-          onSave: _saveBeta,
+          onSave: onSaveBeta,
         ),
       ],
     );
   }
+}
 
-  Widget _section(String label) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(label,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                )),
-      );
+class _EditableNumberRow extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final double defaultValue;
+  final double currentValue;
+  final int frac;
+  final Future<void> Function() onSave;
 
-  Widget _editableNumberRow({
-    required String label,
-    required TextEditingController controller,
-    required double defaultValue,
-    required double currentValue,
-    required int frac,
-    required Future<void> Function() onSave,
-  }) {
+  const _EditableNumberRow({
+    required this.label,
+    required this.controller,
+    required this.defaultValue,
+    required this.currentValue,
+    required this.frac,
+    required this.onSave,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final isDefault = currentValue == defaultValue;
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       SizedBox(

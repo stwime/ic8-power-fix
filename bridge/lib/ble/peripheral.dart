@@ -289,11 +289,21 @@ class IC8Peripheral {
     final ftmsBytes = encodeIndoorBikeData(
       speedKmh: _speedKmh, cadenceRpm: _cadenceRpm, powerW: _powerW);
     final cpsBytes = encodeCyclingPowerMeasurement(_powerW);
-    for (final c in _subscribedFtms) {
-      manager.notifyCharacteristic(c, _indoorBikeDataChar, value: ftmsBytes);
-    }
-    for (final c in _subscribedCps) {
-      manager.notifyCharacteristic(c, _cyclingPowerMeasChar, value: cpsBytes);
+    _notifyAll(_subscribedFtms, _indoorBikeDataChar, ftmsBytes);
+    _notifyAll(_subscribedCps, _cyclingPowerMeasChar, cpsBytes);
+  }
+
+  /// Notify every subscriber and prune any whose write fails — a central
+  /// that dropped the link without us seeing the unsubscribe will otherwise
+  /// stay in the set forever and we'd retry it every tick.
+  void _notifyAll(Set<Central> subs, GATTCharacteristic char, Uint8List value) {
+    // Snapshot the set: we may mutate it from the catchError callback.
+    for (final c in subs.toList()) {
+      unawaited(
+        manager.notifyCharacteristic(c, char, value: value).catchError((_) {
+          subs.remove(c);
+        }),
+      );
     }
   }
 }

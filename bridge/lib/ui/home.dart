@@ -250,6 +250,8 @@ class _HomePageState extends State<HomePage> {
                 central: _central,
               ),
             ));
+            // Settings mutates Calibration in place; rebuild so any displayed
+            // derived value (e.g. proxyName future use) reflects the change.
             if (mounted) setState(() {});
           },
           icon: const Icon(Icons.settings),
@@ -261,7 +263,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _StatusPill(label: _status, tone: _tone),
           const SizedBox(height: 12),
-          if (ble != null) _bleBanner(ble.message, fixable: ble.fixable),
+          if (ble != null) _BleBanner(message: ble.message, fixable: ble.fixable),
           Wrap(spacing: 8, runSpacing: 8, children: [
             ElevatedButton(
                 onPressed: findOnPressed,
@@ -298,12 +300,12 @@ class _HomePageState extends State<HomePage> {
                   crossAxisSpacing: 12,
                   childAspectRatio: 1.6,
                   children: [
-                    _tile('Power', '$pwrCorrected W', highlight: true),
-                    _tile('Cadence', '${cad.toStringAsFixed(0)} rpm'),
-                    _tile('Resistance', '$r'),
-                    _tile('Heart rate', '$hr bpm'),
-                    _tile('Bike says', '$pwrBroadcast W'),
-                    _tile('Correction',
+                    _Tile('Power', '$pwrCorrected W', highlight: true),
+                    _Tile('Cadence', '${cad.toStringAsFixed(0)} rpm'),
+                    _Tile('Resistance', '$r'),
+                    _Tile('Heart rate', '$hr bpm'),
+                    _Tile('Bike says', '$pwrBroadcast W'),
+                    _Tile('Correction',
                         '${pwrCorrected - pwrBroadcast >= 0 ? '+' : ''}'
                         '${pwrCorrected - pwrBroadcast} W'),
                   ],
@@ -316,7 +318,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _bleBanner(String message, {required bool fixable}) {
+}
+
+class _BleBanner extends StatelessWidget {
+  final String message;
+  final bool fixable;
+  const _BleBanner({required this.message, required this.fixable});
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final bg = fixable ? cs.tertiaryContainer : cs.errorContainer;
     final fg = fixable ? cs.onTertiaryContainer : cs.onErrorContainer;
@@ -338,8 +348,16 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+}
 
-  Widget _tile(String label, String value, {bool highlight = false}) {
+class _Tile extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool highlight;
+  const _Tile(this.label, this.value, {this.highlight = false});
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final bg = highlight ? cs.primaryContainer : cs.surfaceContainerHigh;
     final fg = highlight ? cs.onPrimaryContainer : cs.onSurface;
