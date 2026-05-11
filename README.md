@@ -61,7 +61,7 @@ Add the kinetic-energy term that matters during accelerations:
 
 $$P_{\text{corrected}} = \tau_{\text{brake}}(R,\omega) \cdot \omega + I\,\omega\,\dot\omega$$
 
-At steady cadence the second term is zero. During a sprint launch it adds the work spent spinning up the flywheel; during a coastdown it subtracts.
+At steady cadence the second term is zero. During an acceleration it adds the work spent spinning up the flywheel; during a coastdown it subtracts.
 
 ### Where the constants come from
 
@@ -90,13 +90,13 @@ These three anchors â€” disc geometry, ring geometry, and the 1000 W max spec â€
 
 The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term all move in lockstep. Default 1.0; tune against an external power meter when one is available.
 
-## Reality check: the model decomposes a sprint cleanly
+## Reality check: the model decomposes an acceleration cleanly
 
-A BLE-logged sprint at $R = 25$. Cadence climbs from 24 to 118 rpm
+A BLE-logged acceleration at $R = 25$. Cadence climbs from 24 to 118 rpm
 over ~10 seconds (briefly hitting the FTMS 125-rpm cap), then the
 rider stops pushing and the flywheel coasts back down to ~50 rpm:
 
-![Indoor sprint](docs/figures/indoor_surge.png)
+![Indoor acceleration](docs/figures/indoor_surge.png)
 
 Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake). The same shape shows up on a 4iiii crank meter during an outdoor acceleration: different sensor, different system, same physics.
 

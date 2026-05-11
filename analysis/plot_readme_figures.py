@@ -7,8 +7,7 @@ Figures regenerated:
                                     corrected (solid) at several R values
                                     across the cadence range, at the
                                     shipped powerScale default.
-  docs/figures/indoor_surge.png   — R=28 spin-up from
-                                    data/calibration/holding_*.csv,
+  docs/figures/indoor_surge.png   — R=25 acceleration from a BLE log,
                                     decomposed into steady + KE terms.
   docs/figures/spindown_fit.png   — representative ω(t) coastdowns at
                                     four R values, model overlay on
@@ -123,7 +122,7 @@ def _read_window(path: Path, t0: float, t1: float):
 
 
 def plot_indoor_surge():
-    # R=25 sprint at t≈35–50. Cadence climbs 24 → 125 rpm in ~8 s,
+    # R=25 acceleration at t≈35–50. Cadence climbs 24 → 125 rpm in ~8 s,
     # holds at the FTMS 125-rpm cap for ~2 s, then decelerates as the
     # rider stops pushing. R is cleanly 25 throughout. Peak KE pulse
     # during the steep ramp is ~150 W on top of ~270 W steady.
@@ -172,7 +171,7 @@ def plot_indoor_surge():
     ax.plot(t_rel, p_total, "-", color="#222", lw=1.8, label="Bridge total")
     ax.set_ylabel("Power (W)")
     ax.set_title(
-        "R=25 sprint decomposed into steady and KE terms\n"
+        "R=25 acceleration decomposed into steady and KE terms\n"
         f"powerScale = {POWER_SCALE:.2f}"
     )
     ax.legend(loc="upper right", frameon=False)
