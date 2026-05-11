@@ -10,19 +10,13 @@ virtual FTMS power meter your training apps can pair to.
 
 ## Why use this
 
-- **Physics-derived correction, not a flat scale factor.** The model
-  is Wouterse permanent-magnet eddy-brake dynamics, $P = \tau_{\text{brake}}(R,\omega)\,\omega + I\,\omega\,\dot\omega$, with the bell-curve $\tau(\omega)$ shape that classical eddy-brake theory predicts for a conducting disc in a stationary magnetic field. It responds correctly to transients (sprints, coastdowns, low-cadence grinding) instead of just shifting every number by a percentage.
-- **Calibrates to your specific bike.** Auto-calibrate (Settings →
-  Auto-calibrate) fits the brake curve on-device in 5–10 minutes. If
-  you have an outdoor power meter, the Power scale slider pins the
-  absolute scale against ground truth.
-- **No firmware mods, standard FTMS out.** The bike doesn't change.
-  The bridge re-broadcasts as a standard FTMS power meter, so any
-  training app that pairs to FTMS works.
-- **Production-grade plumbing.** Auto-reconnect with backoff if the
-  BLE link drops, wakelock so the bridge phone stays awake, and an
-  FTMS Control Point stub that politely tells apps "manual brake, no
-  ERG/sim" so they fall back to power-only mode cleanly.
+- **Steady-state power across the whole dial, not a flat offset.** The bike's broadcast formula uses cad^1.5 and R^0.83 — both wrong for an eddy-current brake. Real eddy physics gives a quadratic cadence dependence in the linear regime and a saturating brake-curve in R. On the reference unit the bike under-reads at low R (recovery and warm-up zones look harder than they are) and over-reads at high R (race-pace zones look easier). The bridge replaces both with the correct shape.
+- **Honest power during accelerations.** When you stand up and surge from 80 → 110 rpm, your real input includes spinning up the 18 kg flywheel — typically an extra 100–150 W on top of the steady term. The bike ignores this entirely (its formula sees only the current cadence and R) so your surges look weak. The bridge adds the kinetic-energy term `I·ω·dω/dt` and the surge reads at full value.
+- **Honest power during coastdowns, recoveries, and interval transitions.** When you stop pushing, the bike keeps reporting `R × cad^1.5` even though you're not doing work. The bridge subtracts the kinetic energy flowing *out* of the flywheel into the brake, so power drops to zero on time. Intervals, hard-to-easy transitions, and standing-to-seated changes all read right.
+- **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field. The KE term needs `dω/dt`, so timing precision matters during fast transients.
+- **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) measures your residual drivetrain drag in 5–10 minutes of seated coastdowns. If you have an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
+- **No firmware mods, standard FTMS out.** The bike doesn't change. The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works.
+- **Production-grade plumbing.** Auto-reconnect with backoff if the BLE link drops, wakelock so the bridge phone stays awake, and an FTMS Control Point stub that politely tells apps "manual brake, no ERG/sim" so they fall back to power-only mode cleanly.
 
 ## Supported models
 
@@ -35,6 +29,54 @@ an IC8 and apply directly.
 | **Schwinn IC8 / IC4**    | Reference platform. Ships calibrated.           |
 | **Bowflex C6 / C7**      | Same hardware. Ships calibrated.                |
 | Other FTMS indoor bikes  | Should work if they broadcast resistance over FTMS. Run Auto-calibrate first, then verify scale against an outdoor power meter if you have one. |
+
+## What the bridge does
+
+```mermaid
+flowchart LR
+    Bike["<b>IC Bike</b><br/>manual dial"]
+    Bridge["<b>Bridge phone</b><br/><i>P = τ_brake(R,ω)·ω + I·ω·dω/dt</i>"]
+    App["<b>Training app</b><br/>Rouvy · MyWhoosh<br/>Zwift · Garmin"]
+    Bike -- "FTMS 0x1826 + CSC 0x1816<br/>R · cadence · per-rev crank timing" --> Bridge
+    Bridge -- "FTMS 0x1826 + Cycling Power 0x1818<br/>corrected wattage" --> App
+```
+
+The bridge reads two BLE services from the bike: **FTMS Indoor Bike Data** (cadence, resistance level, the bike's own power estimate) and **CSC Cycling Speed and Cadence** (per-revolution crank counts and event times). It runs the physics correction on every sample, then advertises itself as a virtual FTMS bike + cycling power meter named **"IC Bike (corrected)"** (configurable in Settings). Your training app pairs to the bridge instead of the bike.
+
+Heart rate is handled the usual way — pair your HR strap directly to your training app. The bridge doesn't try to be a HR proxy.
+
+There's no resistance control. The bike has a manual dial, so ERG mode isn't possible regardless of what you pair it to.
+
+## Build and run
+
+```
+cd bridge
+flutter pub get
+flutter run                      # connect a phone first
+```
+
+In the app: if a Bluetooth icon appears in the top bar, tap it to
+grant permissions, then tap **Find bike**, tap your bike, and the
+bridge starts. From your training app on a separate device, pair to
+**"IC Bike (corrected)"** as a power meter and as an FTMS bike.
+
+If your numbers feel off, open Settings → **Auto-calibrate** to fit
+your bike's drivetrain residual drag (5–10 minutes, on-device). If
+you have an external power meter, use the **Power scale** slider on
+the same screen to pin the absolute scale. Default is 100% — the
+shipped constants already absorb the known offsets on the reference
+unit.
+
+Tests live in `bridge/test/`. `flutter test` should pass after any
+default changes.
+
+## Limitations
+
+- **Absolute scale depends on your unit.** Spin-downs alone can't tell brake strength from flywheel inertia apart (they multiply in the physics). We pin both from the reference IC8 — geometry for inertia, the 1000 W max-output spec for brake strength. Another IC8 with different manufacturing tolerances could still land 10% off; the Power scale slider absorbs that, but pinning it requires an external power meter.
+- **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence; if CSC isn't available it clamps and slightly underestimates power at very high rpm.
+- **Bell-curve onset is physics-anchored, not data-anchored.** Our spin-downs sit mostly in the linear-damping regime, so the saturating roll-off at the highest R values is fixed by classical eddy-brake theory rather than directly observed. Disambiguating it would need either an independent magnetic-field measurement or coastdowns from much higher peak cadence.
+
+---
 
 ## Why the bike's numbers can't be trusted
 
@@ -100,36 +142,6 @@ rider stops pushing and the flywheel coasts back down to ~50 rpm:
 
 Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake). The same shape shows up on a 4iiii crank meter during an outdoor acceleration: different sensor, different system, same physics.
 
-## What the bridge does
-
-```
-  ┌──────────────┐         ┌──────────────────────────┐         ┌──────────────┐
-  │  indoor bike │   BLE   │       bridge phone       │   BLE   │ training app │
-  │              ├────────▶│                          ├────────▶│              │
-  │  FTMS 0x1826 │ R, cad, │  P = τ_brake(R,ω)·ω      │  FTMS + │  Rouvy       │
-  │              │ power,  │      + I·ω·dω/dt         │  Power  │  MyWhoosh    │
-  │              │  HR     │                          │  0x1818 │  Zwift       │
-  │              │         │                          │         │  Garmin      │
-  └──────────────┘         └──────────────────────────┘         └──────────────┘
-```
-
-The phone running the bridge connects to your bike over BLE (it
-shows up as "Nautilus,Inc - IC Bike" or similar), reads the FTMS
-Indoor Bike Data characteristic, runs the correction on every
-sample, and presents itself as a virtual FTMS bike + cycling power
-meter named **"IC Bike (corrected)"** by default (configurable in
-Settings). Your training app pairs to the bridge instead of the
-bike.
-
-There's no resistance control. The bike has a manual dial, so ERG
-mode isn't possible regardless of what you pair it to.
-
-## Limitations
-
-- **Absolute scale depends on your unit.** Spin-downs alone can't disambiguate $\alpha$ from $I_{\text{crank}}$ — they multiply in $I\,\dot\omega = -\tau$. We pin $I_{\text{crank}}$ from geometry and $\alpha$ from the 1000 W spec, both on the reference unit. Another IC8 with different manufacturing tolerances could still land 10% off; the Power scale slider absorbs that, but pinning it requires an external power meter.
-- **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence if available; otherwise it clamps and slightly underestimates sprint power.
-- **Bell-curve onset is physics-anchored, not data-anchored.** Spin-downs sit mostly below $\omega_c$, so $\omega_c(R)$ is constrained by the strict-Wouterse coupling $\tau_{\max} \cdot \omega_c = \alpha/\kappa$ rather than by trajectory shape. Disambiguating it at high $R$ would need either an independent $B(R)$ measurement or coastdowns from much higher peak cadence.
-
 ## Repository layout
 
 ```
@@ -154,31 +166,7 @@ analysis/fit_wouterse.py         strict-Wouterse 5-param fit on the curated
                                  dataset (one-shot trajectory ODE fit)
 analysis/plot_readme_figures.py  regenerates power_curves.png and
                                  indoor_surge.png from the bridge defaults
-                                 + the canonical R=25 sprint BLE log
+                                 + the canonical R=25 acceleration BLE log
 data/calibration/                BLE logs + crank videos used to fit defaults
 docs/figures/                    README plots
 ```
-
-## Build and run
-
-```
-cd bridge
-flutter pub get
-flutter run                      # connect a phone first
-```
-
-In the app: if a Bluetooth icon appears in the top bar, tap it to
-grant permissions, then tap **Find bike**, tap your bike, and the
-bridge starts. From your training app on a separate device, pair to
-**"IC Bike (corrected)"** as a power meter and as an FTMS bike.
-
-If your numbers feel off, open Settings → **Auto-calibrate** to fit
-the brake curve to your bike (5–10 minutes, on-device). If you have
-an external power meter, use the **Power scale** slider on the same
-screen to pin the absolute scale. It scales steady-state and
-acceleration response by the same factor, so you only ever set one
-number. Default is 100% — the shipped constants already absorb the
-known offsets on the reference unit.
-
-Tests live in `bridge/test/`. `flutter test` should pass after any
-default changes.
