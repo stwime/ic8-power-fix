@@ -69,10 +69,7 @@ class _CoastdownPageState extends State<CoastdownPage> {
       builder: (ctx) => _FitPreviewDialog(fit: fit),
     );
     if (ok != true) return;
-    await widget.calibration.setBrakeFit(
-      alpha: fit.alpha,
-      beta: fit.beta,
-    );
+    await widget.calibration.setBeta(fit.beta);
     if (!mounted) return;
     messenger.showSnackBar(const SnackBar(
       content: Text('Calibration saved'),

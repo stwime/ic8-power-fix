@@ -23,8 +23,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// and 1/ω_c(R) share the single Hill shape H(R). Plus a residual drag
 /// τ_residual(ω) = I·β·ω representing bearings + air at R = 0.
 ///
-///   α   = peak torque amplitude (N·m) — per-bike (magnet × flywheel)
-///   β   = residual drag at R=0 (1/s) — per-bike (bearings + air)
+///   α   = peak torque amplitude (N·m) — anchored to 1000 W spec, shared
+///         across IC8/IC4/C6/C7 (same magnets, same actuator, same firmware)
+///   β   = residual drag at R=0 (1/s) — per-bike (bearings + belt + air)
 ///   κ   = 1/ω_c at saturation (s/rad) — geometry, fixed across bikes
 ///   R_h = Hill midpoint of B²(R) — bike-firmware-calibration × geometry
 ///   p   = Hill sharpness — bike-firmware-calibration × geometry
@@ -33,7 +34,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// physics and whatever non-linear mapping the IC8's firmware applies
 /// between dial position and physical brake state — they're inseparable
 /// from this dataset alone, so they live with the geometry constants and
-/// aren't exposed in auto-calibration. Only (α, β) are fit per bike.
+/// aren't exposed in auto-calibration. Only β is fit per bike — α and
+/// I_crank are structurally degenerate in spin-down data (only their
+/// ratio appears in I·ω̇ = -τ), so per-bike α fitting just absorbs
+/// I_crank deviations into a wrong α. Absolute scale is the
+/// [powerScale] slider's job, against an external power meter.
 /// See [Coastdown.fitBrake].
 ///
 /// Anchoring chain — three independent inputs, zero perceived-effort
@@ -217,18 +222,6 @@ class Calibration {
   Future<void> setBeta(double v) async {
     beta = v;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyBeta, beta);
-  }
-
-  /// Replace the brake/residual fit (typically from a coastdown calibration).
-  Future<void> setBrakeFit({
-    required double alpha,
-    required double beta,
-  }) async {
-    this.alpha = alpha;
-    this.beta = beta;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyAlpha, alpha);
     await prefs.setDouble(_keyBeta, beta);
   }
 

@@ -50,20 +50,22 @@ class CoastdownPoint {
 
 /// Result of fitting Wouterse linear-regime
 ///     λ_eff(R) = β + (2ακ/I) · H(R)²   with H(R) = R^p / (R^p + R_h^p)
-/// across multiple [CoastdownPoint]s. The shape parameters p, R_h, κ
-/// and the inertia I are held fixed at the [Calibration] defaults
-/// (geometry / firmware-mapping, not per-bike); the fitter recovers
-/// (α, β) by linear weighted least squares against the design row
-/// u(R) = (2κ/I) · H(R)².
+/// across multiple [CoastdownPoint]s. Everything except β is held fixed at
+/// the [Calibration] defaults: the shape (p, R_h, κ) is firmware-mapping +
+/// geometry, the inertia I is direct geometry, and α is anchored to the
+/// manufacturer's 1000 W max-output spec via α/κ = 1020 W. Per-bike
+/// spin-downs structurally can't separate α from I (only the ratio shows
+/// up in I·ω̇ = -τ), so fitting α from coastdowns just absorbs I_crank
+/// deviations into a wrong α. β is the one quantity that genuinely varies
+/// unit-to-unit (drivetrain friction, belt tension, bearing wear) and isn't
+/// degenerate with anything else — so it's the only thing we fit.
 class BrakeFit {
-  final double alpha;
   final double beta;
   /// Per-sample-count weighted RMS residual (1/s).
   final double rms;
   /// (R, λ_meas, λ_pred) per input point, in input order.
   final List<({int r, double measured, double predicted})> residuals;
   const BrakeFit({
-    required this.alpha,
     required this.beta,
     required this.rms,
     required this.residuals,
@@ -334,23 +336,29 @@ class CoastdownDetector {
   }
 }
 
-/// Weighted least-squares fit of the Wouterse linear-regime relation
+/// Weighted least-squares fit of β in the Wouterse linear-regime relation
 ///     λ_eff(R) = β + (2·α·κ / I) · H(R)²
-/// with H(R) = R^p / (R^p + R_h^p) and [power], [rh], [kappa], [iCrank]
-/// held fixed at the geometry-derived [Calibration] defaults.
+/// with everything except β held fixed at the [Calibration] defaults.
 ///
 /// User coastdowns at typical cadences sit well below the brake's
 /// critical ω, so the bell-curve term collapses to linear damping with
-/// effective decay rate λ_eff(R). The design row is (u, 1) with
-/// u = (2κ/I)·H(R)² and the fit recovers (α, β) linearly.
+/// effective decay rate λ_eff(R). With α pinned by the 1000 W max-output
+/// spec and I_crank pinned by flywheel geometry — both shared across all
+/// IC8/IC4/C6/C7 units — only β has a physical reason to vary unit-to-unit
+/// and isn't degenerate with anything else. The fitter subtracts the
+/// model's H(R)² contribution and recovers β as a single weighted mean
+/// of the residuals.
 ///
 /// Weights combine √n (sample count) with log(cadHi/cadLo) (dynamic
 /// range observed) — a 125→10 segment carries more information about
 /// the decay rate than a 77→44 one even at the same n.
 ///
-/// Requires ≥2 points across ≥2 distinct R values.
+/// Requires ≥2 points across ≥2 distinct R values (kept as a sanity bar
+/// against single-R datasets even though β alone is identifiable from
+/// one point in principle).
 BrakeFit fitBrake(
   List<CoastdownPoint> points, {
+  double alpha = Calibration.defaultAlpha,
   double power = Calibration.defaultP,
   double rh = Calibration.defaultRh,
   double kappa = Calibration.defaultKappa,
@@ -367,57 +375,43 @@ BrakeFit fitBrake(
   final rhp = math.pow(rh, power).toDouble();
   final scale = 2.0 * kappa / iCrank;
 
-  // Linear-in-(α, β) WLS at fixed (p, R_h, κ, I). Design row is (u, 1)
-  // with u = (2κ/I) · H(R)².
-  double sw = 0, su = 0, su2 = 0, slam = 0, sulam = 0;
-  for (final pt in points) {
-    final r = pt.resistance;
-    final u = r == 0
-        ? 0.0
-        : (() {
-            final rp = math.pow(r, power).toDouble();
-            final h = rp / (rp + rhp);
-            return scale * h * h;
-          })();
-    final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
-    final w = wRoot * wRoot;
-    sw += w;
-    su += w * u;
-    su2 += w * u * u;
-    slam += w * pt.lambda;
-    sulam += w * u * pt.lambda;
+  double designAt(int r) {
+    if (r == 0) return 0.0;
+    final rp = math.pow(r, power).toDouble();
+    final h = rp / (rp + rhp);
+    return scale * h * h;
   }
-  // Normal equations: [[su2, su], [su, sw]] · [α; β] = [sulam; slam]
-  final det = su2 * sw - su * su;
-  if (det.abs() < 1e-12) {
-    throw StateError('singular fit (degenerate R distribution)');
-  }
-  final alpha = (sw * sulam - su * slam) / det;
-  final beta = (su2 * slam - su * sulam) / det;
 
-  double sse = 0, wsum = 0;
+  double weightOf(CoastdownPoint pt) {
+    final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
+    return wRoot * wRoot;
+  }
+
+  // β-only WLS at fixed (α, p, R_h, κ, I): subtract the modelled H(R)²
+  // contribution and take the weighted mean of the residuals.
+  double sw = 0, sres = 0;
+  for (final pt in points) {
+    final u = designAt(pt.resistance);
+    final w = weightOf(pt);
+    sw += w;
+    sres += w * (pt.lambda - alpha * u);
+  }
+  if (sw < 1e-12) {
+    throw StateError('zero-weight fit (degenerate point set)');
+  }
+  final beta = sres / sw;
+
+  double sse = 0;
   final residuals = <({int r, double measured, double predicted})>[];
   for (final pt in points) {
-    final r = pt.resistance;
-    final u = r == 0
-        ? 0.0
-        : (() {
-            final rp = math.pow(r, power).toDouble();
-            final h = rp / (rp + rhp);
-            return scale * h * h;
-          })();
-    final pred = alpha * u + beta;
-    residuals.add((r: r, measured: pt.lambda, predicted: pred));
-    final wRoot = math.sqrt(pt.n.toDouble()) * math.log(pt.cadHi / pt.cadLo);
-    final w = wRoot * wRoot;
+    final pred = alpha * designAt(pt.resistance) + beta;
+    residuals.add((r: pt.resistance, measured: pt.lambda, predicted: pred));
     final e = pt.lambda - pred;
-    sse += w * e * e;
-    wsum += w;
+    sse += weightOf(pt) * e * e;
   }
   return BrakeFit(
-    alpha: alpha,
     beta: beta,
-    rms: math.sqrt(sse / wsum),
+    rms: math.sqrt(sse / sw),
     residuals: residuals,
   );
 }

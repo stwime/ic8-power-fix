@@ -76,7 +76,7 @@ Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - I\,\beta\,\omega$ aga
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-$R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dial-to-magnet mapping, so they ship as fixed defaults. Auto-calibrate only refits $(\alpha, \beta)$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$, which is what user spin-downs cleanly observe.
+$R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dial-to-magnet mapping, so they ship as fixed defaults. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$. $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data — only their ratio appears in $I\,\dot\omega = -\tau$ — so per-bike $\alpha$ fitting would just absorb any $I_{\text{crank}}$ deviation into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
 
 **Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a uniform 5 mm Al disc ($R = 23$ cm) with two lead weight-rings measured by ruler:
 

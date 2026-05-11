@@ -140,14 +140,13 @@ void main() {
   });
 
   group('fitBrake', () {
-    test('recovers (α, β) from synthetic Wouterse-linear decays', () {
+    test('recovers β from synthetic Wouterse-linear decays', () {
       // 5 distinct R values; λ generated from the Wouterse linear-regime
       // form
       //   λ_eff(R) = β + (2ακ/I) · H(R)²,  H(R) = R^p / (R^p + R_h^p)
-      // with shape parameters held at the defaults. The fitter is
-      // linear-in-(α, β) at fixed (p, R_h, κ, I) so recovery is near
-      // machine precision.
-      const alpha = 320.0;
+      // with α and shape held at the calibration defaults. β is the only
+      // free parameter; recovery should be near machine precision.
+      const alpha = Calibration.defaultAlpha;
       const beta = 0.045;
       const p = Calibration.defaultP;
       const rh = Calibration.defaultRh;
@@ -170,7 +169,6 @@ void main() {
       final pts = extractCoastdownPoints(allRows);
       expect(pts.length, 5);
       final fit = fitBrake(pts);
-      expect(fit.alpha, closeTo(alpha, 1e-6));
       expect(fit.beta, closeTo(beta, 1e-9));
       expect(fit.rms, lessThan(1e-6));
     });
@@ -178,7 +176,7 @@ void main() {
     test('handles R=0 (residual-drag baseline) without exploding', () {
       // R=0 contributes the β baseline: λ = β. H(0) = 0 there, so the
       // design row is (0, 1).
-      const alpha = 320.0;
+      const alpha = Calibration.defaultAlpha;
       const beta = 0.045;
       const p = Calibration.defaultP;
       const rh = Calibration.defaultRh;
@@ -200,7 +198,6 @@ void main() {
       }
       final pts = extractCoastdownPoints(allRows);
       final fit = fitBrake(pts);
-      expect(fit.alpha, closeTo(alpha, 1e-6));
       expect(fit.beta, closeTo(beta, 1e-9));
     });
 
