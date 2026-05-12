@@ -8,15 +8,28 @@ IC Bridge is a small Flutter app that reads the bike's BLE output,
 applies a physics-based correction, and re-broadcasts the result as a
 virtual FTMS power meter your training apps can pair to.
 
+## What the bridge does
+
+![Bridge data flow: bike to bridge phone to training app](docs/figures/bridge_diagram.svg)
+
+The bridge reads two BLE services from the bike: **FTMS Indoor Bike Data** (cadence, resistance level, the bike's own power estimate) and **CSC Cycling Speed and Cadence** (per-revolution crank counts and event times). It runs the physics correction on every sample, then advertises itself as a virtual FTMS bike + cycling power meter named **"IC Bike (corrected)"** (configurable in Settings). Your training app pairs to the bridge instead of the bike.
+
+Heart rate works the usual way: pair your strap directly to your training app. The bridge isn't a HR proxy.
+
+There's no resistance control. The bike has a manual dial, so ERG mode isn't possible regardless of what you pair to.
+
 ## Why use this
 
-- **Right shape across the whole dial.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R. On the reference unit the bike reads low at low R (warm-ups feel harder than they are) and high at race-pace R.
+- **Right shape across the resistance range.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R. On the reference unit the bike reads low at low R (warm-ups feel harder than they are) and high at race-pace R.
 - **Honest power during accelerations.** When you stand up and surge from 80 to 110 rpm, you're also spinning up an 18 kg flywheel. That's an extra 100–150 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt` so the surge reads at full value.
 - **Honest power during coastdowns and recoveries.** When you stop pushing, the bike keeps reporting `R × cad^1.5`. The bridge subtracts the kinetic energy flowing out of the flywheel into the brake, so power drops to zero on time.
 - **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which sharpens the acceleration math during fast transients.
-- **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) measures your residual drivetrain drag in 5–10 minutes of seated coastdowns. With an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
+- **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) takes 5–10 minutes: pedal up to at least 70 rpm, lift both feet off so the pedals spin freely, wait for them to stop, then change the resistance and repeat — at least 3 different resistance levels. It fits your residual drivetrain drag from the resulting flywheel-decay curves. With an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
 - **Standard FTMS out, no firmware mods.** The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works. The bike doesn't change.
-- **Production-grade plumbing.** Auto-reconnect with backoff if the BLE link drops, wakelock so the bridge phone stays awake, and the bridge tells training apps it has a manual brake (no ERG/sim) so they fall back to power-only mode cleanly.
+- **Production-grade plumbing.**
+  - Auto-reconnect with backoff if the BLE link drops.
+  - Wakelock keeps the bridge phone awake.
+  - The bridge advertises a manual brake (no ERG/sim) so training apps cleanly fall back to power-only mode.
 
 ## Supported models
 
@@ -30,22 +43,12 @@ an IC8 and apply directly.
 | **Bowflex C6 / C7**      | Same hardware. Ships calibrated.                |
 | Other FTMS indoor bikes  | Should work if they broadcast resistance over FTMS. Run Auto-calibrate first, then verify scale against an outdoor power meter if you have one. |
 
-## What the bridge does
-
-![Bridge data flow: bike to bridge phone to training app](docs/figures/bridge_diagram.svg)
-
-The bridge reads two BLE services from the bike: **FTMS Indoor Bike Data** (cadence, resistance level, the bike's own power estimate) and **CSC Cycling Speed and Cadence** (per-revolution crank counts and event times). It runs the physics correction on every sample, then advertises itself as a virtual FTMS bike + cycling power meter named **"IC Bike (corrected)"** (configurable in Settings). Your training app pairs to the bridge instead of the bike.
-
-Heart rate works the usual way: pair your strap directly to your training app. The bridge isn't a HR proxy.
-
-There's no resistance control. The bike has a manual dial, so ERG mode isn't possible regardless of what you pair to.
-
 ## Build and run
 
 ```
 cd bridge
 flutter pub get
-flutter run --release            # connect a phone first; --release so the app keeps running after you unplug
+flutter run --release            # connect a phone via USB first; --release so the app keeps running after you unplug
 ```
 
 In the app: if a Bluetooth icon appears in the top bar, tap it to
@@ -62,7 +65,7 @@ screen to pin the absolute scale. Default is 100%.
 
 - **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still be off by 10%. The Power scale slider absorbs that against an external power meter.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
-- **Bell-curve onset is physics-anchored, not data-anchored.** Our spin-downs sit mostly in the linear-damping regime, so the saturating roll-off at the highest R values is fixed by classical eddy-brake theory rather than directly observed.
+- **Roll-off at the highest R values is theory, not data.** Our spin-downs sit mostly in the linear-damping regime where the brake is roughly linear in cadence. The saturating roll-off above that is pinned by classical eddy-brake theory (see "The fix" below) rather than fitted to our measurements.
 
 ---
 
