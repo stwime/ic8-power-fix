@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import '../ble/central.dart';
 import '../physics/calibration.dart';
 import '../physics/coastdown.dart';
+import 'tokens.dart';
 
 enum _BannerTone { idle, info, success, warning, error }
+enum _Quality { excellent, good, fair }
 
 /// Coastdown calibration screen. Listens to the central's sample stream, runs
 /// a streaming detector, and accumulates clean (R, λ) points. Once ≥3 distinct
@@ -93,43 +95,50 @@ class _CoastdownPageState extends State<CoastdownPage> {
           if (_points.isNotEmpty)
             IconButton(
               tooltip: 'Clear all measurements',
-              icon: const Icon(Icons.delete_sweep),
+              icon: const Icon(Icons.delete_sweep_outlined),
               onPressed: _clearPoints,
             ),
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(
+            Insets.lg, Insets.md, Insets.lg, Insets.lg),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const _Instructions(),
-          const SizedBox(height: 12),
+          const SizedBox(height: Insets.md),
           ValueListenableBuilder<IC8Sample?>(
             valueListenable: _lastSample,
             builder: (ctx, _, child) => _liveStatus(ctx),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Insets.md),
           Expanded(
             child: _PointsTable(
               points: _points,
               onRemove: (i) => setState(() => _points.removeAt(i)),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Insets.md),
           Row(children: [
             Expanded(child: OutlinedButton.icon(
               onPressed: _detector.currentRunLength > 0
                   ? () => setState(_detector.discard)
                   : null,
-              icon: const Icon(Icons.cancel),
+              icon: const Icon(Icons.cancel_outlined),
               label: const Text('Cancel measurement'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: Insets.md),
+              ),
             )),
-            const SizedBox(width: 8),
+            const SizedBox(width: Insets.sm),
             Expanded(child: FilledButton.icon(
               onPressed: _canFit ? _fitAndPreview : null,
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.check),
               label: Text(_canFit
                   ? 'Save calibration'
                   : 'Save (${_distinctR.length}/3)'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: Insets.md),
+              ),
             )),
           ]),
         ]),
@@ -149,8 +158,9 @@ class _CoastdownPageState extends State<CoastdownPage> {
     if (!_seenAnyCsc && _last != null) {
       return const _StatusBanner(
         tone: _BannerTone.error,
-        text: 'Your bike is not reporting cadence in real-time, so calibration '
-            'cannot run. Make sure the bike is on and the pedals are turning.',
+        text: 'Your bike is not reporting cadence in real-time, so '
+            'calibration cannot run. Make sure the bike is on and the '
+            'pedals are turning.',
       );
     }
     final running = _detector.currentRunLength;
@@ -160,8 +170,8 @@ class _CoastdownPageState extends State<CoastdownPage> {
     if (running > 0) {
       return _StatusBanner(
         tone: _BannerTone.success,
-        text: 'Measuring at resistance ${_detector.currentRunR}. Wait for the '
-            'pedals to stop completely. Keep your hands off the dial. '
+        text: 'Measuring at resistance ${_detector.currentRunR}. Wait for '
+            'the pedals to stop completely. Keep your hands off the dial. '
             'Cadence: '
             '${_detector.currentRunCadence?.toStringAsFixed(0)} rpm.',
       );
@@ -185,40 +195,88 @@ class _CoastdownPageState extends State<CoastdownPage> {
 class _Instructions extends StatelessWidget {
   const _Instructions();
 
+  static const _steps = [
+    'Set the resistance dial to a low number (try 5).',
+    'Pedal until your cadence is at least 70 rpm.',
+    'Quickly lift both feet off the pedals at the same time so they spin '
+        'freely. A slow or one-foot-at-a-time release adds drag and ruins '
+        'the measurement. Keep your hands off the dial.',
+    'Wait for the pedals to stop spinning completely. The measurement is '
+        'not finished until they do.',
+    'Change the resistance and repeat — at least 3 different resistance '
+        'levels in total. More levels (and more coastdowns per level) give '
+        'a tighter fit.',
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      color: colorScheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: DefaultTextStyle.merge(
-          style: TextStyle(color: colorScheme.onSecondaryContainer),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('How it works',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: colorScheme.onSecondaryContainer,
-                    )),
-            const SizedBox(height: 4),
-            Text(
-                'You will pedal up and then stop, several times at different '
-                'resistance levels. The app measures how the flywheel slows '
-                'down each time. This usually takes 5–10 minutes.\n\n'
-                '1. Set the resistance dial to a low number (try 5).\n'
-                '2. Pedal until your cadence is at least 70 rpm.\n'
-                '3. Quickly lift both feet off the pedals at the same time so '
-                'they spin freely. A slow or one-foot-at-a-time release adds '
-                'drag and ruins the measurement. Keep your hands off the dial.\n'
-                '4. Wait for the pedals to stop spinning completely. The '
-                'measurement is not finished until they do.\n'
-                '5. Change the resistance and repeat, at least 3 different '
-                'resistance levels in total. More levels (and more coastdowns '
-                'per level) give a tighter fit.',
-                style: TextStyle(color: colorScheme.onSecondaryContainer)),
-          ]),
-        ),
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer,
+        borderRadius: BorderRadius.circular(Radii.card),
       ),
+      padding: const EdgeInsets.all(Insets.lg),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.help_outline, color: cs.onSecondaryContainer, size: 18),
+          const SizedBox(width: Insets.sm),
+          Text('How it works',
+              style: text.titleSmall?.copyWith(
+                color: cs.onSecondaryContainer,
+                fontWeight: FontWeight.w700,
+              )),
+        ]),
+        const SizedBox(height: Insets.sm),
+        Text(
+            'You will pedal up and stop several times at different '
+            'resistance levels. The app measures how the flywheel slows '
+            'down each time. Usually 5–10 minutes.',
+            style: text.bodyMedium?.copyWith(
+              color: cs.onSecondaryContainer,
+              height: 1.35,
+            )),
+        const SizedBox(height: Insets.md),
+        for (int i = 0; i < _steps.length; i++) ...[
+          if (i > 0) const SizedBox(height: Insets.sm),
+          _NumberedStep(
+            number: i + 1,
+            text: _steps[i],
+            color: cs.onSecondaryContainer,
+          ),
+        ],
+      ]),
     );
+  }
+}
+
+class _NumberedStep extends StatelessWidget {
+  final int number;
+  final String text;
+  final Color color;
+  const _NumberedStep({
+    required this.number,
+    required this.text,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final body = Theme.of(context).textTheme.bodyMedium;
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        width: 22,
+        child: Text('$number.',
+            style: body?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            )),
+      ),
+      Expanded(child: Text(text,
+          style: body?.copyWith(color: color, height: 1.35))),
+    ]);
   }
 }
 
@@ -229,25 +287,32 @@ class _StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
     final Color bg;
     final Color fg;
+    final IconData icon;
     switch (tone) {
       case _BannerTone.idle:
-        bg = colorScheme.surfaceContainerHigh;
-        fg = colorScheme.onSurface;
+        bg = cs.surfaceContainerLow;
+        fg = cs.onSurfaceVariant;
+        icon = Icons.directions_bike_outlined;
       case _BannerTone.info:
-        bg = colorScheme.secondaryContainer;
-        fg = colorScheme.onSecondaryContainer;
+        bg = cs.secondaryContainer;
+        fg = cs.onSecondaryContainer;
+        icon = Icons.touch_app_outlined;
       case _BannerTone.success:
-        bg = colorScheme.primaryContainer;
-        fg = colorScheme.onPrimaryContainer;
+        bg = cs.primaryContainer;
+        fg = cs.onPrimaryContainer;
+        icon = Icons.timer_outlined;
       case _BannerTone.warning:
-        bg = colorScheme.tertiaryContainer;
-        fg = colorScheme.onTertiaryContainer;
+        bg = cs.tertiaryContainer;
+        fg = cs.onTertiaryContainer;
+        icon = Icons.warning_amber_rounded;
       case _BannerTone.error:
-        bg = colorScheme.errorContainer;
-        fg = colorScheme.onErrorContainer;
+        bg = cs.errorContainer;
+        fg = cs.onErrorContainer;
+        icon = Icons.error_outline;
     }
     return Semantics(
       liveRegion: true,
@@ -255,10 +320,15 @@ class _StatusBanner extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(Radii.tile),
         ),
-        padding: const EdgeInsets.all(12),
-        child: Text(text, style: TextStyle(color: fg)),
+        padding: const EdgeInsets.all(Insets.md),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icon, color: fg, size: 20),
+          const SizedBox(width: Insets.md),
+          Expanded(child: Text(text,
+              style: t.bodyMedium?.copyWith(color: fg, height: 1.35))),
+        ]),
       ),
     );
   }
@@ -275,45 +345,90 @@ class _PointsTable extends StatelessWidget {
   static const double _r2Excellent = 0.99;
   static const double _r2Good = 0.97;
 
-  static String _qualityLabel(double r2) {
-    if (r2 >= _r2Excellent) return 'Excellent';
-    if (r2 >= _r2Good) return 'Good';
-    return 'Fair';
+  static _Quality _qualityOf(double r2) {
+    if (r2 >= _r2Excellent) return _Quality.excellent;
+    if (r2 >= _r2Good) return _Quality.good;
+    return _Quality.fair;
   }
 
   @override
   Widget build(BuildContext context) {
-    final body = Theme.of(context).textTheme.bodyMedium;
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     if (points.isEmpty) {
-      return Center(child: Text('No measurements yet', style: body));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(Insets.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.timeline_outlined,
+                  size: 40, color: cs.onSurfaceVariant),
+              const SizedBox(height: Insets.md),
+              Text('No measurements yet',
+                  style: text.titleMedium?.copyWith(color: cs.onSurface)),
+              const SizedBox(height: Insets.xs),
+              Text('Follow the steps above to capture your first coastdown.',
+                  textAlign: TextAlign.center,
+                  style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      );
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Semantics(
         header: true,
         container: true,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(
+              horizontal: Insets.sm, vertical: Insets.xs),
           child: Row(children: [
-            SizedBox(width: 110, child: Text('Resistance', style: body)),
-            Expanded(child: Text('Quality', style: body)),
-            SizedBox(width: 28, child: Text('', style: body)),
+            SizedBox(width: 96,
+                child: Text('RESISTANCE',
+                    style: text.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w600,
+                    ))),
+            Expanded(
+                child: Text('QUALITY',
+                    style: text.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w600,
+                    ))),
+            const SizedBox(width: 48),
           ]),
         ),
       ),
-      const Divider(height: 1),
-      Expanded(child: ListView.builder(
+      Divider(height: 1, color: cs.outlineVariant),
+      Expanded(child: ListView.separated(
         itemCount: points.length,
+        separatorBuilder: (_, _) => Divider(height: 1, color: cs.outlineVariant),
         itemBuilder: (ctx, i) {
           final p = points[i];
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(
+                horizontal: Insets.sm, vertical: Insets.xs),
             child: Row(children: [
-              SizedBox(width: 110, child: Text('${p.resistance}', style: body)),
-              Expanded(child: Text(_qualityLabel(p.r2), style: body)),
-              IconButton(
-                icon: const Icon(Icons.close, size: 16),
-                tooltip: 'Remove',
-                onPressed: () => onRemove(i),
+              SizedBox(
+                width: 96,
+                child: Text('${p.resistance}',
+                    style: text.titleMedium?.copyWith(
+                      color: cs.onSurface,
+                      fontWeight: FontWeight.w600,
+                    )),
+              ),
+              Expanded(child: _QualityChip(quality: _qualityOf(p.r2))),
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Remove',
+                  onPressed: () => onRemove(i),
+                ),
               ),
             ]),
           );
@@ -323,14 +438,48 @@ class _PointsTable extends StatelessWidget {
   }
 }
 
+class _QualityChip extends StatelessWidget {
+  final _Quality quality;
+  const _QualityChip({required this.quality});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final (Color bg, Color fg, String label) = switch (quality) {
+      _Quality.excellent =>
+        (cs.primaryContainer, cs.onPrimaryContainer, 'Excellent'),
+      _Quality.good =>
+        (cs.secondaryContainer, cs.onSecondaryContainer, 'Good'),
+      _Quality.fair =>
+        (cs.tertiaryContainer, cs.onTertiaryContainer, 'Fair'),
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: Insets.sm, vertical: 2),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(Radii.pill),
+        ),
+        child: Text(label,
+            style: text.labelSmall?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+            )),
+      ),
+    );
+  }
+}
+
 class _FitPreviewDialog extends StatelessWidget {
   final BrakeFit fit;
   const _FitPreviewDialog({required this.fit});
 
   @override
   Widget build(BuildContext context) {
-    final body = Theme.of(context).textTheme.bodyMedium;
-    final small = Theme.of(context).textTheme.bodySmall;
+    final text = Theme.of(context).textTheme;
     final maxResid = fit.residuals
         .map((r) => (r.measured - r.predicted).abs())
         .reduce((a, b) => a > b ? a : b);
@@ -340,13 +489,15 @@ class _FitPreviewDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min, children: [
         Text(
             'You captured ${fit.residuals.length} measurements across '
-            '${fit.residuals.map((r) => r.r).toSet().length} resistance levels.',
-            style: body),
-        const SizedBox(height: 12),
-        Text('Fit quality: ${_overall(fit.rms, maxResid)}', style: body),
-        const SizedBox(height: 8),
-        Text('You can run the calibration again anytime if you want to '
-            'improve it.', style: small),
+            '${fit.residuals.map((r) => r.r).toSet().length} resistance '
+            'levels.',
+            style: text.bodyMedium),
+        const SizedBox(height: Insets.md),
+        Text('Fit quality: ${_overall(fit.rms, maxResid)}',
+            style: text.bodyMedium),
+        const SizedBox(height: Insets.sm),
+        Text('You can run the calibration again anytime to improve it.',
+            style: text.bodySmall),
       ]),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false),
@@ -367,6 +518,6 @@ class _FitPreviewDialog extends StatelessWidget {
   static String _overall(double rms, double maxResid) {
     if (rms < _rmsExcellent && maxResid < _maxResidExcellent) return 'Excellent';
     if (rms < _rmsGood && maxResid < _maxResidGood) return 'Good';
-    return 'Fair. Consider redoing with steadier coastdowns';
+    return 'Fair — consider redoing with steadier coastdowns';
   }
 }

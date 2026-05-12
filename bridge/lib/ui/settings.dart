@@ -6,6 +6,7 @@ import '../ble/central.dart';
 import '../physics/calibration.dart';
 import '../prefs.dart';
 import 'coastdown.dart';
+import 'tokens.dart';
 
 /// Settings screen for the calibration constants. Live preview of corrected
 /// power means a slider move retunes the home tile and the bridged peripheral
@@ -87,7 +88,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     setState(() => _nameCtrl.text = widget.prefs.proxyName);
     messenger.showSnackBar(SnackBar(
-      content: Text('Saved: "${widget.prefs.proxyName}"'),
+      content: Text('Saved: “${widget.prefs.proxyName}”'),
     ));
   }
 
@@ -122,105 +123,75 @@ class _SettingsPageState extends State<SettingsPage> {
     messenger.showSnackBar(const SnackBar(content: Text('Saved')));
   }
 
+  Future<void> _resetPowerScale() async {
+    await widget.calibration.setPowerScale(Calibration.defaultPowerScale);
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final cal = widget.calibration;
-    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
         actions: [
           IconButton(
-            tooltip: 'Reset to defaults',
+            tooltip: 'Reset all to defaults',
             icon: const Icon(Icons.restore),
             onPressed: cal.isAtDefaults ? null : _resetConfirm,
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(
+            Insets.lg, Insets.md, Insets.lg, Insets.xl),
         children: [
-          const _Section('Power preview'),
+          const _SectionHeader('Power preview'),
           ValueListenableBuilder<IC8Sample?>(
             valueListenable: _lastSample,
-            builder: (context, s, _) {
-              final pwr = (s?.correctedW ?? 0).round();
-              return Card(child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(children: [
-                  const Icon(Icons.bolt, size: 32),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('$pwr W', style: textTheme.headlineMedium),
-                      Text(s == null
-                          ? 'Connect to your bike to see your live power here'
-                          : 'Live power, updates as you adjust the slider',
-                          style: textTheme.bodySmall),
-                    ],
-                  )),
-                ]),
-              ));
+            builder: (context, s, _) => _PowerPreviewCard(sample: s),
+          ),
+
+          const SizedBox(height: Insets.xl),
+          _SectionHeader(
+            'Power scale',
+            trailing: cal.powerScale == Calibration.defaultPowerScale
+                ? null
+                : TextButton(
+                    onPressed: _resetPowerScale,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: Insets.sm, vertical: Insets.xs),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Reset'),
+                  ),
+          ),
+          _SectionHint(
+              'Use this if your power numbers feel high or low compared to '
+              'another power meter you trust. Scales steady-state and '
+              'acceleration response together.'),
+          const SizedBox(height: Insets.sm),
+          _PowerScaleSlider(
+            value: cal.powerScale,
+            onChanged: (v) => setState(() => cal.powerScale = v),
+            onChangeEnd: (v) async {
+              await cal.setPowerScale(v);
+              if (mounted) setState(() {});
             },
           ),
 
-          const SizedBox(height: 16),
-          const _Section('Power scale'),
-          Text('Use this if your power numbers feel too high or too low '
-              'compared to another power meter you trust. Slide right to '
-              'increase your power, left to decrease. Scales steady-state '
-              'and acceleration response by the same factor.',
-              style: textTheme.bodySmall),
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(child: Slider(
-              min: Calibration.powerScaleMin,
-              max: Calibration.powerScaleMax,
-              // 0.01 step — fine enough to tune against an external
-              // power meter without big jumps in absolute output.
-              divisions: ((Calibration.powerScaleMax - Calibration.powerScaleMin) * 100).round(),
-              value: cal.powerScale.clamp(
-                  Calibration.powerScaleMin, Calibration.powerScaleMax),
-              label: '${(cal.powerScale * 100).round()}%',
-              onChanged: (v) {
-                // In-memory only — onChangeEnd persists. Cheap rebuilds drive
-                // the live-preview tile and the % label below.
-                setState(() => cal.powerScale = v);
-              },
-              onChangeEnd: (v) async {
-                await cal.setPowerScale(v);
-                // Calibration is mutable; rebuild so isAtDefaults (and the
-                // reset-action enable state) reflects the persisted value.
-                if (mounted) setState(() {});
-              },
-            )),
-            SizedBox(
-              width: 64,
-              child: Text('${(cal.powerScale * 100).round()}%',
-                  textAlign: TextAlign.right,
-                  style: textTheme.titleMedium),
-            ),
-          ]),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Lower', style: textTheme.bodySmall),
-              Text('Default', style: textTheme.bodySmall),
-              Text('Higher', style: textTheme.bodySmall),
-            ]),
-          ),
-
-          const SizedBox(height: 24),
-          const _Section('Calibrate to your bike'),
-          Text('Each bike is slightly different. The auto-calibration takes '
-              'a few minutes and measures how your bike\'s flywheel slows '
-              'down at different resistance levels. This makes the power '
-              'numbers match your bike more accurately.',
-              style: textTheme.bodySmall),
-          const SizedBox(height: 12),
-          FilledButton.icon(
+          const SizedBox(height: Insets.xl),
+          const _SectionHeader('Calibrate to your bike'),
+          _SectionHint(
+              'Each bike’s flywheel is slightly different. Auto-calibration '
+              'measures how yours slows down at different resistance levels '
+              'so the power numbers match your bike more accurately. Takes '
+              '5–10 minutes.'),
+          const SizedBox(height: Insets.md),
+          FilledButton.tonalIcon(
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => CoastdownPage(
@@ -235,11 +206,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 });
               }
             },
-            icon: const Icon(Icons.science),
+            icon: const Icon(Icons.science_outlined),
             label: const Text('Auto-calibrate'),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: Insets.xl),
           _AdvancedSection(
             alphaController: _alphaCtrl,
             betaController: _betaCtrl,
@@ -249,22 +220,23 @@ class _SettingsPageState extends State<SettingsPage> {
             onSaveBeta: _saveBeta,
           ),
 
-          const SizedBox(height: 24),
-          const _Section('Bike name in training apps'),
-          Text('How your bike appears when Zwift, Rouvy, or MyWhoosh look for '
-              'a power meter. The change takes effect the next time you '
-              'connect the bike.',
-              style: textTheme.bodySmall),
-          const SizedBox(height: 8),
+          const SizedBox(height: Insets.xl),
+          const _SectionHeader('Bike name in training apps'),
+          _SectionHint(
+              'How your bike appears when Zwift, Rouvy, or MyWhoosh look '
+              'for a power meter. Takes effect the next time you connect.'),
+          const SizedBox(height: Insets.sm),
           TextField(
             controller: _nameCtrl,
             maxLength: AppPrefs.proxyNameMaxLen,
+            textInputAction: TextInputAction.done,
             onSubmitted: (_) => _saveProxyName(),
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               labelText: 'Bike name',
               hintText: AppPrefs.defaultProxyName,
+              prefixIcon: Icon(Icons.bluetooth_outlined),
             ),
           ),
         ],
@@ -273,19 +245,157 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-class _Section extends StatelessWidget {
-  final String label;
-  const _Section(this.label);
+class _PowerPreviewCard extends StatelessWidget {
+  final IC8Sample? sample;
+  const _PowerPreviewCard({required this.sample});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(label,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              )),
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final pwr = (sample?.correctedW ?? 0).round();
+    final hasSignal = sample != null;
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(Radii.card),
+      ),
+      padding: const EdgeInsets.all(Insets.lg),
+      child: Row(children: [
+        Container(
+          width: 48, height: 48,
+          decoration: BoxDecoration(
+            color: cs.primaryContainer,
+            borderRadius: BorderRadius.circular(Radii.tile),
+          ),
+          child: Icon(Icons.bolt, color: cs.onPrimaryContainer, size: 28),
+        ),
+        const SizedBox(width: Insets.md),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedSwitcher(
+              duration: Motion.fast,
+              transitionBuilder: (c, a) => FadeTransition(opacity: a, child: c),
+              child: Text(
+                hasSignal ? '$pwr W' : '— W',
+                key: ValueKey(hasSignal ? pwr : -1),
+                style: text.headlineMedium?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: Insets.xs),
+            Text(
+              hasSignal
+                  ? 'Live, updates as you adjust the slider'
+                  : 'Connect to your bike to see live power',
+              style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ],
+        )),
+      ]),
     );
+  }
+}
+
+class _PowerScaleSlider extends StatelessWidget {
+  final double value;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+  const _PowerScaleSlider({
+    required this.value,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final clamped = value.clamp(
+        Calibration.powerScaleMin, Calibration.powerScaleMax);
+    final percent = (clamped * 100).round();
+    return Column(children: [
+      Row(children: [
+        Expanded(child: Slider(
+          min: Calibration.powerScaleMin,
+          max: Calibration.powerScaleMax,
+          // 0.01 step — fine enough to tune against an external power meter
+          // without big jumps in absolute output.
+          divisions: ((Calibration.powerScaleMax - Calibration.powerScaleMin) * 100).round(),
+          value: clamped,
+          label: '$percent%',
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+        )),
+        SizedBox(
+          width: 56,
+          child: Text('$percent%',
+              textAlign: TextAlign.right,
+              style: text.titleMedium?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w600,
+              )),
+        ),
+      ]),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Insets.md),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('${(Calibration.powerScaleMin * 100).round()}%',
+              style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          Text('${(Calibration.powerScaleMax * 100).round()}%',
+              style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+        ]),
+      ),
+    ]);
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final Widget? trailing;
+  const _SectionHeader(this.label, {this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Insets.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(label,
+                style: text.titleSmall?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.1,
+                )),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHint extends StatelessWidget {
+  final String text;
+  const _SectionHint(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    return Text(text,
+        style: t.bodySmall?.copyWith(
+          color: cs.onSurfaceVariant,
+          height: 1.4,
+        ));
   }
 }
 
@@ -308,42 +418,49 @@ class _AdvancedSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: EdgeInsets.zero,
-      title: Text('Advanced',
-          style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              )),
-      subtitle: Text('Manually edit the resistance curve',
-          style: textTheme.bodySmall),
-      children: [
-        const SizedBox(height: 8),
-        Text(
-            'These two numbers describe how each resistance level affects '
-            'power. Most people should use Auto-calibrate above instead of '
-            'editing them by hand.',
-            style: textTheme.bodySmall),
-        const SizedBox(height: 12),
-        _EditableNumberRow(
-          label: 'Brake',
-          controller: alphaController,
-          defaultValue: Calibration.defaultAlpha,
-          currentValue: currentAlpha,
-          frac: 4,
-          onSave: onSaveAlpha,
-        ),
-        const SizedBox(height: 8),
-        _EditableNumberRow(
-          label: 'Friction',
-          controller: betaController,
-          defaultValue: Calibration.defaultBeta,
-          currentValue: currentBeta,
-          frac: 4,
-          onSave: onSaveBeta,
-        ),
-      ],
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Theme(
+      // ExpansionTile inherits dividerColor; default to none for a flatter
+      // look that fits the rest of the screen's sectioned hint blocks.
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: Text('Advanced',
+            style: text.titleSmall?.copyWith(
+              color: cs.onSurface,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+            )),
+        subtitle: Text('Manually edit the resistance curve',
+            style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+        children: [
+          const SizedBox(height: Insets.sm),
+          _SectionHint(
+              'These two numbers describe how each resistance level affects '
+              'power. Most people should use Auto-calibrate above instead '
+              'of editing them by hand.'),
+          const SizedBox(height: Insets.md),
+          _EditableNumberRow(
+            label: 'Brake',
+            controller: alphaController,
+            defaultValue: Calibration.defaultAlpha,
+            currentValue: currentAlpha,
+            frac: 4,
+            onSave: onSaveAlpha,
+          ),
+          const SizedBox(height: Insets.md),
+          _EditableNumberRow(
+            label: 'Friction',
+            controller: betaController,
+            defaultValue: Calibration.defaultBeta,
+            currentValue: currentBeta,
+            frac: 4,
+            onSave: onSaveBeta,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -370,7 +487,7 @@ class _EditableNumberRow extends StatelessWidget {
     final isDefault = currentValue == defaultValue;
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       SizedBox(
-        width: 96,
+        width: 88,
         child: ExcludeSemantics(child: Text(label)),
       ),
       Expanded(child: Semantics(
@@ -379,11 +496,13 @@ class _EditableNumberRow extends StatelessWidget {
         child: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
           onSubmitted: (_) => onSave(),
           onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
           decoration: InputDecoration(
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: Insets.md, vertical: Insets.md),
             border: const OutlineInputBorder(),
             helperText: isDefault
                 ? 'default'
