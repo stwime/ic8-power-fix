@@ -70,25 +70,30 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 9.19  # kg·m² (effective, at the crank). Derived from geometry,
+I_CRANK = 9.09  # kg·m² (effective, at the crank). Derived from geometry,
                 # not fit. 18 kg total flywheel (manufacturer spec): a 5 mm
                 # uniform Al disc plus two lead weight-rings, one on each
                 # face. Disc radius R = 0.23 m (46 cm OD); rings measured
                 # by ruler against the outer edge:
                 #   Disc:   π·R²·t·ρ_Al = π·(0.23)²·0.005·2700 = 2.24 kg
-                #   Ring A: r = 13.5–18.5 cm, h ≤ 2.0 cm  (5 cm wide)
-                #   Ring B: r = 13.0–17.0 cm, h ≤ 1.5 cm  (4 cm wide)
-                # Both rings sit at ~88% of their measured "less than"
-                # thickness bounds → m_A = 10.09 kg, m_B = 5.67 kg at
-                # ρ_Pb = 11340 kg/m³. Lead is the only material that
-                # closes the mass budget: iron, brass, copper, even
-                # bismuth all need thicker rings than the upper bounds
-                # allow (iron would need 27% over the measured thickness).
-                #   I_disc    = ½·m·R²              = 0.0593 kg·m²
-                #   I_ring_A  = m·(r_in² + r_out²)/2 = 0.2645 kg·m²
-                #   I_ring_B  = m·(r_in² + r_out²)/2 = 0.1299 kg·m²
-                #   I_flywheel                       = 0.4537 kg·m²
-                #   I_crank   = g²·I_flywheel = 9.19 kg·m²   (g = 4.5)
+                #   Ring A: r = 14–18 cm, h ≤ 2.0 cm  (4 cm wide)
+                #   Ring B: r = 13–17 cm, h ≤ 1.5 cm  (4 cm wide)
+                # Both rings have ~2-3 mm chamfered edges extending
+                # past the flat-top radii (chamfer cuts the corner,
+                # not all the way to zero thickness); the chamfer
+                # volume closes the 18 kg budget at flat-top h
+                # comfortably within the bounds → m_A = 9.25 kg,
+                # m_B = 6.50 kg at ρ_Pb = 11340 kg/m³. Symmetric
+                # chamfers shift I by <0.3%, below the flat-ring
+                # formula's precision. Iron would need rings 46% over
+                # the bounds, brass 35%, copper 28%, bismuth 18% —
+                # all ruled out. Lead is the only material consistent
+                # with the ring volumes and the 18 kg flywheel total.
+                #   I_disc    = ½·m·R²              = 0.0594 kg·m²
+                #   I_ring_A  = m·(r_in² + r_out²)/2 = 0.2405 kg·m²
+                #   I_ring_B  = m·(r_in² + r_out²)/2 = 0.1490 kg·m²
+                #   I_flywheel                       = 0.4488 kg·m²
+                #   I_crank   = g²·I_flywheel = 9.09 kg·m²   (g = 4.5)
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the Hill shape — α and κ slide along a degenerate ridge unless

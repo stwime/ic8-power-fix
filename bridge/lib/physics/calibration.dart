@@ -49,24 +49,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///      weight-rings, one on each face. Disc radius R = 0.23 m
 ///      (46 cm OD); rings measured by ruler against the outer edge:
 ///        Disc:   π·R²·t·ρ_Al = π·(0.23)²·0.005·2700 = 2.24 kg
-///        Ring A: r = 13.5–18.5 cm, h ≈ 1.77 cm, ρ_Pb = 11340 → 10.09 kg
-///        Ring B: r = 13.0–17.0 cm, h ≈ 1.33 cm, ρ_Pb = 11340 → 5.67 kg
-///      Both rings sit at ~88% of their measured "less than" thickness
-///      upper bounds. Lead is the only material that closes the mass
-///      budget at the measured ring volumes: iron, brass, copper, and
-///      even bismuth would all need rings thicker than the upper bounds
-///      allow (iron would be 27% over). Spin-bike weight rings are lead
-///      by convention.
-///        I_disc    = ½·m·R²              = 0.0593 kg·m²
-///        I_ring_A  = m·(r_in² + r_out²)/2 = 0.2645 kg·m²
-///        I_ring_B  = m·(r_in² + r_out²)/2 = 0.1299 kg·m²
-///        I_flywheel                       = 0.4537 kg·m²
-///        I_crank   = g²·I_flywheel = 9.19 kg·m²   (g = 4.5)
+///        Ring A: r = 14–18 cm, h ≈ 2.03 cm, ρ_Pb = 11340 → 9.25 kg
+///        Ring B: r = 13–17 cm, h ≈ 1.52 cm, ρ_Pb = 11340 → 6.50 kg
+///      Both rings have ~2-3 mm chamfered edges extending past the
+///      flat-top radii above (chamfer cuts the corner, not all the
+///      way to zero thickness). The chamfer volume closes the 18 kg
+///      budget at flat-top thicknesses comfortably within the
+///      measured "less than" ruler bounds (h ≤ 2.0 cm, h ≤ 1.5 cm).
+///      Symmetric chamfers shift I by <0.3% (outer chamfer has
+///      slightly more circumference than inner) — below the flat-
+///      ring formula's precision, so the constants below are kept
+///      from the flat-ring model. Iron would need rings 46% over
+///      the bounds, brass 35%, copper 28%, bismuth 18% — all ruled
+///      out. Lead is the only material consistent with the measured
+///      ring volumes and the 18 kg flywheel total.
+///        I_disc    = ½·m·R²              = 0.0594 kg·m²
+///        I_ring_A  = m·(r_in² + r_out²)/2 = 0.2405 kg·m²
+///        I_ring_B  = m·(r_in² + r_out²)/2 = 0.1490 kg·m²
+///        I_flywheel                       = 0.4488 kg·m²
+///        I_crank   = g²·I_flywheel = 9.09 kg·m²   (g = 4.5)
 ///
 ///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
 ///      Under strict Wouterse, the asymptotic peak brake power at any
-///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.164 and
-///      α/κ = 1020 W — matching the 1000 W rating to ~2%. The saturation
+///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.160 and
+///      α/κ = 1031 W — matching the 1000 W rating to ~3%. The saturation
 ///      bell-curve isn't directly observed in our coastdowns (which sit
 ///      in the linear-damping regime ω << ω_c), but it's a real physical
 ///      constraint of permanent-magnet eddy brakes — finite magnetic
@@ -95,16 +101,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1020 W).
-  // I_crank pinned to 9.19 (anchored to flywheel geometry: 18 kg with
+  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1031 W).
+  // I_crank pinned to 9.09 (anchored to flywheel geometry: 18 kg with
   // a 5 mm uniform Al disc + lead weight-rings on both faces, side A
-  // at r = 13.5–18.5 cm and side B at r = 13.0–17.0 cm).
+  // at r = 14–18 cm and side B at r = 13–17 cm). κ rescaled with
+  // I_crank since the spindown fit constrains 2ακ/I, not κ alone.
   static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
   static const double defaultBeta = 0.0389;     // 1/s — residual drag at R=0
   static const double defaultRh = 72.858;       // Hill midpoint
   static const double defaultP = 1.265;         // Hill sharpness
-  static const double defaultKappa = 0.1618;    // s/rad — 1/ω_c at saturation
-  static const double defaultICrank = 9.19;     // kg·m² (effective, at crank)
+  static const double defaultKappa = 0.1600;    // s/rad — 1/ω_c at saturation
+  static const double defaultICrank = 9.09;     // kg·m² (effective, at crank)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
@@ -114,17 +121,17 @@ class Calibration {
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // v6 marks a belt-geometry remeasurement (8.0 → 9.19): the heavier ring
-  // (side A) extends to 18.5 cm radius — significantly further out than
-  // the 16 cm previously assumed — and the rings are lead, not iron (the
-  // only material consistent with both the radial measurements and the
-  // 18 kg flywheel total). (R_h, p, κ, β) were refit at the new I_crank,
-  // so loading v5 (α, β, I_crank) under the v6 R_h/p/κ defaults would
-  // mismatch the torque shape — wipe and reset.
-  static const String _keyAlpha = 'cal.alpha.v6';
-  static const String _keyBeta = 'cal.betaW.v6';
-  static const String _keyICrank = 'cal.iCrank.v6';
-  static const String _keyPowerScale = 'cal.powerScale.v6';
+  // v7 marks another belt-radii remeasurement (9.19 → 9.09): both rings
+  // now span 4 cm radially — side A at r = 14–18 cm and side B at r =
+  // 13–17 cm — at the same h ≤ 2.0 / 1.5 cm ruler bounds. I_crank fell
+  // ~1%; κ rescales by the same factor to preserve the linear-regime
+  // fit (the spindown data constrains 2ακ/I, not κ alone). Loading v6
+  // (β, I_crank) under v7 κ/I defaults would slightly distort λ(R) —
+  // wipe and reset.
+  static const String _keyAlpha = 'cal.alpha.v7';
+  static const String _keyBeta = 'cal.betaW.v7';
+  static const String _keyICrank = 'cal.iCrank.v7';
+  static const String _keyPowerScale = 'cal.powerScale.v7';
 
   double alpha;
   double beta;
@@ -256,6 +263,10 @@ class Calibration {
     await prefs.remove('cal.betaW.v5');
     await prefs.remove('cal.iCrank.v5');
     await prefs.remove('cal.powerScale.v5');
+    await prefs.remove('cal.alpha.v6');
+    await prefs.remove('cal.betaW.v6');
+    await prefs.remove('cal.iCrank.v6');
+    await prefs.remove('cal.powerScale.v6');
   }
 
   bool get isAtDefaults =>

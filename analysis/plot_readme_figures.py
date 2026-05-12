@@ -38,8 +38,8 @@ ALPHA = 165.0
 BETA = 0.0389
 RH = 72.858
 P_EXP = 1.265
-KAPPA = 0.1618
-I_CRANK = 9.19
+KAPPA = 0.1600
+I_CRANK = 9.09
 POWER_SCALE = 1.00
 
 # IC8's own broadcast formula (firmware fit). See README "Why the bike's

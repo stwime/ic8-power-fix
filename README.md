@@ -104,8 +104,8 @@ $$H(R) = \frac{R^p}{R^p + R_h^p}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \fr
 
 Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down (46 video-tracked segments spanning $R = 0$ to 93; `analysis/fit_wouterse.py`):
 
-- $\alpha = 165$ N·m, $\beta = 0.0389$ s⁻¹, $\kappa = 0.162$ s/rad, $R_h = 72.9$, $p = 1.27$.
-- $\alpha/\kappa = 1020$ W, the strict-Wouterse asymptotic peak brake power. Within 2% of the manufacturer's 1000 W max-output spec.
+- $\alpha = 165$ N·m, $\beta = 0.0389$ s⁻¹, $\kappa = 0.160$ s/rad, $R_h = 72.9$, $p = 1.27$.
+- $\alpha/\kappa = 1031$ W, the strict-Wouterse asymptotic peak brake power. Within 3% of the manufacturer's 1000 W max-output spec.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
@@ -114,10 +114,10 @@ $R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dia
 **Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a uniform 5 mm Al disc ($R = 23$ cm) with two lead weight-rings measured by ruler:
 
 - Disc ($\rho_{\text{Al}} = 2700$): 2.24 kg, $I = 0.059$ kg·m².
-- Ring A ($r$ from 13.5 to 18.5 cm, $h \approx 1.77$ cm, $\rho_{\text{Pb}} = 11{,}340$): 10.09 kg, $I = 0.265$ kg·m².
-- Ring B ($r$ from 13.0 to 17.0 cm, $h \approx 1.33$ cm, same density): 5.67 kg, $I = 0.130$ kg·m².
+- Ring A ($r$ from 14 to 18 cm, $h \approx 2.03$ cm, $\rho_{\text{Pb}} = 11{,}340$): 9.25 kg, $I = 0.241$ kg·m².
+- Ring B ($r$ from 13 to 17 cm, $h \approx 1.52$ cm, same density): 6.50 kg, $I = 0.149$ kg·m².
 
-Lead is the only material that closes the mass budget at the measured ring volumes. Iron, brass, copper, and even bismuth all need rings thicker than the measured upper bounds (iron by 27%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.19$ kg·m².
+Each belt has ~2-3 mm chamfered edges extending past the flat-top radii above (the chamfer cuts the corner, not all the way to zero thickness); the chamfer volume closes the 18 kg budget at flat-top $h$ comfortably within the ruler "less than" bounds, and the symmetric chamfers shift $I$ by <0.3% (below the flat-ring formula's precision). Lead is the only material consistent with the measured ring volumes and the 18 kg total: iron, brass, copper, and bismuth all need rings far thicker than the bounds allow (iron by 46%, brass 35%, copper 28%, bismuth 18%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m².
 
 Disc geometry, ring geometry, and the 1000 W max spec are three independent anchors. They land on a calibration consistent with the data (RSS = 0.0431 across 51,792 samples).
 
