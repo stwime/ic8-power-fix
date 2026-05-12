@@ -23,7 +23,13 @@ class _HomePageState extends State<HomePage> {
   late final IC8Central _central;
   late final IC8Peripheral _peripheral;
 
-  final List<({Peripheral peripheral, String name, int rssi})> _found = [];
+  // Scan results live in a ValueNotifier so RSSI churn during discovery
+  // (10+ packets/sec/device) only rebuilds the device list, not the whole
+  // Scaffold. RSSI deltas below _rssiThresh are also suppressed since the
+  // value is shown rounded.
+  final ValueNotifier<List<({Peripheral peripheral, String name, int rssi})>>
+      _found = ValueNotifier(const []);
+  static const int _rssiThresh = 3;
   Peripheral? _connected;
   final ValueNotifier<IC8Sample?> _lastSample = ValueNotifier(null);
   String _status = 'Ready';
@@ -107,8 +113,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _startScan() async {
+    _found.value = const [];
     setState(() {
-      _found.clear();
       _status = 'Searching for your bike…';
       _tone = _StatusTone.working;
       _scanning = true;
@@ -117,20 +123,24 @@ class _HomePageState extends State<HomePage> {
     _scanSub = _central.scanForBikes().listen((d) {
       // BLE often emits multiple advertisement events per device — the first
       // packet may carry only service UUIDs while the scan response carries
-      // the local name. Merge so we keep the best name we've seen.
-      final i = _found.indexWhere((e) => e.peripheral.uuid == d.peripheral.uuid);
+      // the local name. Merge so we keep the best name we've seen. Suppress
+      // small RSSI flickers — without the threshold, packet-rate updates
+      // (~10 Hz/device) would rebuild the list pointlessly.
+      final list = _found.value;
+      final i = list.indexWhere((e) => e.peripheral.uuid == d.peripheral.uuid);
       if (i < 0) {
-        setState(() => _found.add(d));
-      } else {
-        final existing = _found[i];
-        final mergedName = d.name.isNotEmpty ? d.name : existing.name;
-        if (mergedName != existing.name || d.rssi != existing.rssi) {
-          setState(() {
-            _found[i] = (peripheral: existing.peripheral,
-                name: mergedName, rssi: d.rssi);
-          });
-        }
+        _found.value = [...list, d];
+        return;
       }
+      final existing = list[i];
+      final mergedName = d.name.isNotEmpty ? d.name : existing.name;
+      final nameChanged = mergedName != existing.name;
+      final rssiChanged = (d.rssi - existing.rssi).abs() >= _rssiThresh;
+      if (!nameChanged && !rssiChanged) return;
+      final next = List.of(list);
+      next[i] = (peripheral: existing.peripheral,
+          name: mergedName, rssi: d.rssi);
+      _found.value = next;
     }, onError: (e) {
       // startDiscovery throws when BLE flips off mid-scan or permission is
       // revoked. Without this handler the error escapes the zone, the
@@ -197,6 +207,7 @@ class _HomePageState extends State<HomePage> {
     _connStateSub?.cancel();
     _centralStateSub?.cancel();
     _peripheralStateSub?.cancel();
+    _found.dispose();
     _lastSample.dispose();
     WakelockPlus.disable();
     _central.dispose();
@@ -292,13 +303,21 @@ class _HomePageState extends State<HomePage> {
           ]),
           const Divider(),
           if (_connected == null) Expanded(
-            child: ListView(children: [
-              for (final d in _found) ListTile(
-                title: Text(d.name.isEmpty ? 'Unknown device' : d.name),
-                subtitle: Text('Signal: ${d.rssi} dBm'),
-                onTap: () => _connect(d.peripheral),
+            child: ValueListenableBuilder<
+                List<({Peripheral peripheral, String name, int rssi})>>(
+              valueListenable: _found,
+              builder: (context, list, _) => ListView.builder(
+                itemCount: list.length,
+                itemBuilder: (ctx, i) {
+                  final d = list[i];
+                  return ListTile(
+                    title: Text(d.name.isEmpty ? 'Unknown device' : d.name),
+                    subtitle: Text('Signal: ${d.rssi} dBm'),
+                    onTap: () => _connect(d.peripheral),
+                  );
+                },
               ),
-            ]),
+            ),
           ) else Expanded(
             child: ValueListenableBuilder<IC8Sample?>(
               valueListenable: _lastSample,
