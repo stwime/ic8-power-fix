@@ -102,7 +102,7 @@ At steady cadence the second term is zero. During an acceleration it adds the wo
 
 $$H(R) = \frac{R^p}{R^p + R_h^p}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \frac{1}{\omega_c(R)} = \kappa\,H(R)$$
 
-Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down (46 video-tracked segments spanning $R = 0$ to 93; `analysis/fit_wouterse.py`):
+Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down. The 1 Hz BLE cadence is too coarse to fit a curve to during a fast decay, so $\omega(t)$ comes from 120 fps phone video of the cranks (46 segments spanning $R = 0$ to 93; `analysis/track_crank.py`, `analysis/fit_wouterse.py`):
 
 - $\alpha = 165$ N·m, $\beta = 0.0389$ s⁻¹, $\kappa = 0.160$ s/rad, $R_h = 72.9$, $p = 1.27$.
 - $\alpha/\kappa = 1031$ W, the strict-Wouterse asymptotic peak brake power. Within 3% of the manufacturer's 1000 W max-output spec.
@@ -119,7 +119,9 @@ $R_h$, $p$, and $\kappa$ entangle eddy-brake physics with the IC8 firmware's dia
 
 Each belt has ~2-3 mm chamfered edges extending past the flat-top radii above (the chamfer cuts the corner, not all the way to zero thickness); the chamfer volume closes the 18 kg budget at flat-top $h$ comfortably within the ruler "less than" bounds, and the symmetric chamfers shift $I$ by <0.3% (below the flat-ring formula's precision). Lead is the only material consistent with the measured ring volumes and the 18 kg total: iron, brass, copper, and bismuth all need rings far thicker than the bounds allow (iron by 46%, brass 35%, copper 28%, bismuth 18%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m².
 
-Disc geometry, ring geometry, and the 1000 W max spec are three independent anchors. They land on a calibration consistent with the data (RSS = 0.0431 across 51,792 samples).
+Disc and ring geometry pin $I$ from physics; spin-downs pin the linear-regime damping $2\alpha\kappa H^2/I$; the 1000 W spec pins the remaining $\alpha/\kappa$ degree of freedom. The fit lands at RSS = 0.0431 across 51,792 samples.
+
+The 1000 W anchor is the soft one — it's a marketing/regulatory ceiling, not a measurement. A ±30% error in $\alpha$ distorts predicted power by a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion. An independent $\alpha$ — Hall-probe $B$ fed into the Wouterse linear-regime formula (`analysis/physics_first_brake.py`) — would close the gap; without it, ground-truth absolute scale at high R needs an external power-meter sweep across multiple R levels.
 
 The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term move in lockstep. Default 1.0; tune against an external power meter when one is available.
 
