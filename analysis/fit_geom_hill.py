@@ -1,35 +1,37 @@
-"""Refit the eddy-brake model with H_geom(R) + 2-parameter cam warp.
+"""Refit the eddy-brake model with H_geom(R) + cam-warp instead of empirical Hill.
 
 The original fit_wouterse.py uses a free 2-parameter Hill curve
 H(R) = R^p / (R^p + R_h^p) to parameterize B²(R) and pins α from the
 1000 W spec. The geometric path through physics_first_brake.py builds
 H_geom(R) from the magnet-disc overlap geometry, assuming a linear
-mapping from dial value R to carrier position. The shape disagrees
-substantially with the empirical Hill, in two ways:
+mapping from dial value R to carrier position. The user confirmed that
+both magnet pairs fully overlap the disc at R=100, so the script's
+geometric endpoint is correct (back pair sits at d = R_DISK - A_MAG,
+the full-overlap threshold; front pair is comfortably inside). This
+means H_geom(R=100) = 1 corresponds to the true operating maximum, not
+an extrapolation.
 
-  1. Curvature: H_geom (linear cam) is concave-up with a corner near
-     full engagement; empirical Hill is concave throughout the dial range.
-  2. Endpoint: H_geom hits 1 at R=100 (script's geometry assumes both
-     magnets fully on the disc at R=100). Empirical Hill is still climbing
-     at R=100 with H_emp(100) ≈ 0.6 — i.e., the brake never reaches full
-     geometric saturation in the dial range.
+What still needs flexing is the *dial-to-carrier* mapping. The linear
+mapping (R → position) doesn't match the empirical Hill's shape across
+the range. Real cams are non-linear; we add a one-parameter warp:
 
-The endpoint mismatch means the cam likely doesn't take the magnets all
-the way to full overlap. We model this with two cam parameters:
+    R_eff(R; q) = 100 · (R/100)^q
 
-    R_eff(R; q, s) = s · 100 · (R/100)^q
+  q = 1 : linear (current physics_first_brake assumption)
+  q > 1 : carrier lags at low-R, accelerates at high-R
+  q < 1 : carrier engages early, eases off at high-R
 
-  q  controls the dial-to-carrier nonlinearity:
-       q = 1 : linear (current physics_first_brake assumption)
-       q > 1 : carrier lags low-R, accelerates at high-R
-       q < 1 : carrier engages early, eases off at high-R
-  s  controls the carrier's max travel as a fraction of full geometric
-     overlap (1 = magnets fully on disc at R=100, < 1 = stops short).
+H_geom_warped(R; q) = H_geom(R_eff(R; q)) with H_geom(100) = 1 pinned.
+Free fit parameters become {α, κ, β, q} — same count as fit_wouterse.py's
+{κ, R_h, p, β} with α pinned, but here α is data-determined and the cam
+parameter q has a mechanical reading.
 
-H_geom_warped(R; q, s) = H_geom(R_eff(R; q, s)). Free fit params become
-{α, κ, β, q, s} — same count (5) as the empirical Hill fit's
-{α (pinned), κ, R_h, p, β} = (4 free + 1 pin), but α is now data-
-determined and the shape parameters have a mechanical interpretation.
+What the fit will tell us. With H_geom pinning the operating maximum at
+R=100 to full overlap, the fitted α is the physical brake amplitude at
+full overlap. Compare to the magnet-circuit prediction 2ακ ≈ 52 from
+physics_first_brake.py. If they disagree, the gap is being absorbed
+into σ_Al alloy losses, yoke imperfections, fringe-field reduction of
+effective G(R), or similar non-ideal effects.
 
 Requires data/calibration/all_spindowns.csv. Run aggregate_spindowns.py
 first if you don't have it.
@@ -63,25 +65,24 @@ _G_GRID = np.array([pfb.G_of_R(R) for R in _R_GRID])
 _H_GEOM_GRID = np.sqrt(np.maximum(_G_GRID, 0.0) / G_MAX)
 
 
-def H_geom_warped(R: float, q: float, s: float = 1.0) -> float:
-    """H_geom at the warped dial R_eff = s·100·(R/100)^q.
+def H_geom_warped(R: float, q: float) -> float:
+    """H_geom at the warped dial value R_eff = 100·(R/100)^q.
 
-    s scales the carrier's max travel as a fraction of full geometric
-    overlap. q controls dial-to-carrier nonlinearity.
+    q controls dial-to-carrier nonlinearity (q=1 linear). Full overlap
+    at R=100 is pinned by the geometry (user confirmed: back pair sits
+    at the full-overlap threshold at R=100).
     """
     if R <= 0:
         return 0.0
-    R_eff = s * 100.0 * (R / 100.0) ** q
-    if R_eff <= 0:
-        return 0.0
+    R_eff = 100.0 * (R / 100.0) ** q
     if R_eff >= 110.0:
         return float(_H_GEOM_GRID[-1])
     return float(np.interp(R_eff, _R_GRID, _H_GEOM_GRID))
 
 
 def tau_total(R: float, omega: float, params) -> float:
-    alpha, kappa, beta, q, s = params
-    H = H_geom_warped(R, q, s)
+    alpha, kappa, beta, q = params
+    H = H_geom_warped(R, q)
     x = kappa * H * omega
     tau_eddy = alpha * H * 2.0 * x / (1.0 + x * x)
     tau_residual = I_CRANK * beta * omega
@@ -117,35 +118,34 @@ def residuals(params, segments):
 
 
 def run_fit(segments, x0):
-    #              α       κ     β    q    s
-    lo = np.array([1.0,    1e-4, 0.0, 0.2, 0.1])
-    hi = np.array([1000.0, 5.0,  0.5, 5.0, 1.0])
+    #              α       κ     β    q
+    lo = np.array([1.0,    1e-4, 0.0, 0.2])
+    hi = np.array([1000.0, 5.0,  0.5, 5.0])
     res = least_squares(residuals, x0, args=(segments,),
                         bounds=(lo, hi), x_scale="jac",
-                        max_nfev=800, verbose=2)
+                        max_nfev=600, verbose=2)
     return res
 
 
-def plot_shape_compare(out_path,
-                       q_fit: float | None = None,
-                       s_fit: float | None = None):
-    """H_geom(R; q, s) vs empirical Hill from the prior fit."""
+def plot_shape_compare(out_path, q_fit: float | None = None):
+    """H_geom(R; q) vs empirical Hill from the prior fit."""
     Rg = np.linspace(0, 100, 401)
-    H_lin = np.array([H_geom_warped(R, 1.0, 1.0) for R in Rg])
+    H_lin = np.array([H_geom_warped(R, 1.0) for R in Rg])
     R_h_emp, p_emp = 72.9, 1.27
     H_emp = np.array([empirical_hill(R, R_h_emp, p_emp) for R in Rg])
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(Rg, H_lin, "C0-", lw=2.0, alpha=0.5,
-            label="H_geom(R), q=1, s=1 (linear cam, full overlap)")
-    if q_fit is not None and s_fit is not None:
-        H_warp = np.array([H_geom_warped(R, q_fit, s_fit) for R in Rg])
+            label="H_geom(R), q=1 (linear cam)")
+    if q_fit is not None:
+        H_warp = np.array([H_geom_warped(R, q_fit) for R in Rg])
         ax.plot(Rg, H_warp, "C2-", lw=2.4,
-                label=f"H_geom(R), q={q_fit:.2f}, s={s_fit:.2f} (fitted)")
+                label=f"H_geom(R), q={q_fit:.2f} (fitted)")
     ax.plot(Rg, H_emp, "C3--", lw=1.8, alpha=0.85,
             label=f"empirical Hill (R_h={R_h_emp}, p={p_emp})")
     ax.set_xlabel("R")
     ax.set_ylabel("H(R)")
-    ax.set_title("Brake-shape function: geometry + cam warp vs empirical Hill")
+    ax.set_title("Brake-shape function: geometry + cam warp vs empirical Hill\n"
+                 "(full overlap at R=100 pinned by geometry)")
     ax.grid(alpha=0.3)
     ax.legend(fontsize=9)
     fig.tight_layout()
@@ -167,22 +167,22 @@ def main():
     print(f"using H_geom from physics_first_brake "
           f"(a={pfb.A_MAG*100:.2f} cm dia, L_m={pfb.L_MAG*1000:.1f} mm)\n")
 
-    # Warm-start: empirical-Hill values for {α, κ, β}; cam warp set to
-    # match the empirical-Hill shape roughly. q=0.8 + s=0.6 stretches the
-    # geometric H_geom to peak at H≈0.6 at R=100, matching H_emp(100)=0.6.
-    x0 = np.array([165.0, 0.160, 0.04, 0.8, 0.6])
+    # Warm-start: empirical-Hill values for {α, κ, β}, q=3 to stretch the
+    # geometric H_geom toward the empirical-Hill shape (linear H_geom hits
+    # H=0.5 around R=35 vs empirical's R=73, so we need q ≈ ln(.35)/ln(.73)
+    # ≈ 3.3).
+    x0 = np.array([165.0, 0.160, 0.04, 3.0])
     res = run_fit(segments, x0)
-    alpha, kappa, beta, q, s = res.x
+    alpha, kappa, beta, q = res.x
     rss = 0.5 * float((res.fun ** 2).sum())
     two_ak = 2.0 * alpha * kappa
     a_over_k = alpha / kappa
 
-    print("\n=== H_geom + 2-param cam-warp fit ({α, κ, β, q, s} all free) ===")
+    print("\n=== H_geom + cam-warp fit ({α, κ, β, q} free; s=1 from geometry) ===")
     print(f"  α     = {alpha:>8.3f} N·m")
     print(f"  κ     = {kappa:>8.4f} s/rad")
     print(f"  β     = {beta:>8.4f} 1/s")
     print(f"  q     = {q:>8.3f}        (cam nonlinearity; 1 = linear)")
-    print(f"  s     = {s:>8.3f}        (engagement fraction at R=100)")
     print(f"  2ακ   = {two_ak:>8.3f} N·m·s/rad")
     print(f"  α/κ   = {a_over_k:>8.1f} W   (asymptotic peak)")
     print(f"  RSS   = {rss:>8.6f}")
@@ -211,20 +211,13 @@ def main():
         print(f"  or the linear-regime ακH² coupling itself doesn't capture")
         print(f"  the high-R bell. Inspect per-segment residuals.")
     print()
-    print(f"  Engagement at R=100: H_geom_warped(100; q={q:.2f}, s={s:.2f}) "
-          f"= {H_geom_warped(100, q, s):.3f}")
-    print(f"  (empirical Hill gives H_emp(100) = 0.60; agreement here tells")
-    print(f"  us how much carrier sweep is actually used out of the full")
-    print(f"  geometric range.)")
-    print()
-    print(f"  Geometric magnet-circuit prediction (physics_first_brake.py)")
-    print(f"  was 2ακ ≈ 52 at H_geom=1. With s ≈ {s:.2f}, the actual")
-    print(f"  operating max is at H ≈ {H_geom_warped(100, q, s):.2f}, so the")
-    print(f"  predicted on-bike 2ακ·H² at R=100 is")
-    print(f"  ≈ {52 * H_geom_warped(100, q, s)**2:.1f}, vs fitted "
-          f"{two_ak * H_geom_warped(100, q, s)**2:.1f}.")
+    print(f"  Fitted 2ακ = {two_ak:.1f} is the linear-regime damping at R=100")
+    print(f"  (full overlap, H=1 by geometry). Compare to the magnet-circuit")
+    print(f"  prediction 2ακ ≈ 52 from physics_first_brake.py. Any gap")
+    print(f"  goes into σ_Al alloy, yoke imperfection, or effective-G")
+    print(f"  fringing — all combined.")
 
-    plot_shape_compare(OUT_DIR / "H_geom_vs_hill.png", q_fit=q, s_fit=s)
+    plot_shape_compare(OUT_DIR / "H_geom_vs_hill.png", q_fit=q)
 
 
 if __name__ == "__main__":
