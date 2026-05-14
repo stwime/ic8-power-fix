@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
@@ -197,17 +198,22 @@ class IC8Peripheral {
 
     _writeReqSub = manager.characteristicWriteRequested.listen(_onWriteRequest);
 
+    // FTMS Service Data (3 bytes):
+    //   byte 0    Flags                  bit 0 = Fitness Machine Available
+    //   bytes 1-2 Fitness Machine Type   uint16 LE, bit 5 = Indoor Bike
+    // The bluetooth_low_energy Darwin backend throws UnsupportedError if
+    // serviceData is non-empty (see advertisement.dart docs + darwin api.dart),
+    // so we only set it on platforms where it's actually supported.
+    final supportsServiceData = Platform.isAndroid || Platform.isWindows;
     await manager.startAdvertising(Advertisement(
       name: name,
-      // Service Data per FTMS spec: byte 0 = Fitness Machine Type bit-field;
-      // bit 0 = Indoor Bike supported.
       serviceUUIDs: [
         UUID.short(_kFtmsService),
         UUID.short(_kCyclingPowerService),
       ],
-      serviceData: {
-        UUID.short(_kFtmsService): Uint8List.fromList([0x01, 0x00, 0x01, 0x00]),
-      },
+      serviceData: supportsServiceData
+          ? {UUID.short(_kFtmsService): Uint8List.fromList([0x01, 0x20, 0x00])}
+          : const {},
       manufacturerSpecificData: const [],
     ));
 

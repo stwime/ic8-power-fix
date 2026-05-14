@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:app_settings/app_settings.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -177,19 +177,34 @@ class _HomePageState extends State<HomePage> {
     _scanSub = null;
     try { await sub?.cancel(); } catch (_) {}
     try { await _central.stopScan(); } catch (_) {}
+    // Keep the device awake while we're bridging — Rouvy/MyWhoosh runs on a
+    // separate device, so this phone's job is to stay foregrounded with BLE
+    // alive end-to-end of the ride. iOS bluetooth-central/peripheral
+    // background modes (Info.plist) cover the case where the screen sleeps.
+    await WakelockPlus.enable();
     try {
-      // Keep the device awake while we're bridging — Rouvy/MyWhoosh runs on a
-      // separate device, so this phone's job is to stay foregrounded with BLE
-      // alive end-to-end of the ride. iOS bluetooth-central/peripheral
-      // background modes (Info.plist) cover the case where the screen sleeps.
-      await WakelockPlus.enable();
       await _central.connect(p);
-      _connected = p;
-      await _peripheral.start(name: widget.prefs.proxyName);
-    } catch (_) {
+    } catch (e, st) {
+      // Central never came up — that's the actual "could not connect" case.
+      debugPrint('central.connect failed: $e\n$st');
       await WakelockPlus.disable();
       setState(() {
         _status = 'Could not connect. Try again, or pick another bike.';
+        _tone = _StatusTone.warning;
+      });
+      return;
+    }
+    setState(() => _connected = p);
+    try {
+      await _peripheral.start(name: widget.prefs.proxyName);
+    } catch (e, st) {
+      // Bike is connected and producing samples; only the rebroadcast failed.
+      // Don't overwrite the "connected" status with a misleading error — but
+      // do log: silent failures here used to mask an iOS-only serviceData bug.
+      debugPrint('peripheral.start failed: $e\n$st');
+      setState(() {
+        _status = 'Connected, but rebroadcast did not start. '
+            'Training apps won\'t see corrected power — try reconnecting.';
         _tone = _StatusTone.warning;
       });
     }
