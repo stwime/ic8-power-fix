@@ -98,18 +98,21 @@ At steady cadence the second term is zero. During an acceleration it adds the wo
 
 ### Where the constants come from
 
-**Brake curve from spin-downs.** Strict Wouterse pins both $\tau_{\max}(R)$ and $\omega_c(R)$ to a single underlying $B^2(R)$, via $\tau_{\max} \propto B^2$ and $\omega_c \propto 1/B^2$. We parameterize $B^2(R)$ with a Hill curve:
+**Brake curve from spin-downs.** Strict Wouterse pins both $\tau_{\max}(R)$ and $\omega_c(R)$ to a single underlying $B^2(R)$, via $\tau_{\max} \propto B^2$ and $\omega_c \propto 1/B^2$. We parameterize $B^2(R)$ with a sum of two Hill curves:
 
-$$H(R) = \frac{R^p}{R^p + R_h^p}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \frac{1}{\omega_c(R)} = \kappa\,H(R)$$
+$$H(R) = w \cdot \frac{R^{p_1}}{R^{p_1} + R_{h1}^{p_1}} + (1-w) \cdot \frac{R^{p_2}}{R^{p_2} + R_{h2}^{p_2}}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \frac{1}{\omega_c(R)} = \kappa\,H(R)$$
+
+A single 2-param Hill over-brakes by 0.3–0.85 rad/s across $R = 22..44$ in the middle of the spin-down — the empirical $B^2(R)$ has a shoulder a single sigmoid can't bend to. Two Hills close that mid-band gap, dropping global RSS 38% over the single-Hill fit. The decomposition is empirical: the IC8 has two magnet pairs but both engage over the same $R$ range and already sum to a smooth ramp in the geometric $H_\mathrm{geom}$ (`analysis/physics_first_brake.py`, `analysis/fit_geom_hill.py`), so the second Hill captures structure plausibly from yoke flux saturation, anti-polar pair coupling, or $\sigma_\mathrm{Al}$ frequency dependence — but isn't a clean one-knob mapping to any of those.
 
 Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - \tau_c - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down. Residual drag is split into a constant Coulomb term $\tau_c$ (bearings + belt + seal friction) and a linear viscous term $I\,\beta\,\omega$ (windage + air-film); isolating the $R=0$ spin-downs and fitting drag-shape alone, Coulomb + viscous beats viscous-only by roughly 15× in RSS, which matches physical expectation (bearings give approximately constant torque, not viscous). The 1 Hz BLE cadence is too coarse to fit a curve to during a fast decay, so $\omega(t)$ comes from 120 fps phone video of the cranks (46 segments spanning $R = 0$ to 93; `analysis/track_crank.py`, `analysis/fit_wouterse.py`):
 
-- $\alpha = 165$ N·m, $\beta = 0.0216$ s⁻¹, $\tau_c = 1.21$ N·m, $\kappa = 0.1585$ s/rad, $R_h = 74.4$, $p = 1.23$.
+- $\alpha = 165$ N·m, $\beta = 0.0157$ s⁻¹, $\tau_c = 1.36$ N·m, $\kappa = 0.1585$ s/rad.
+- $w = 0.447$; sharp Hill $R_{h1} = 57.6$, $p_1 = 2.30$; broad Hill $R_{h2} = 128$, $p_2 = 0.685$.
 - $\alpha/\kappa = 1041$ W, the strict-Wouterse asymptotic peak brake power. Within 4% of the manufacturer's 1000 W max-output spec.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-$R_h$, $p$, $\kappa$, and $\tau_c$ entangle eddy-brake physics, the IC8 firmware's dial-to-magnet mapping, and bearing/belt friction, so they ship as fixed defaults. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$; the per-bike $\beta$ silently absorbs any unit-to-unit drift in $\tau_c$ as a small bias (~5–10% of $\lambda$ at typical riding cadences). $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so per-bike $\alpha$ fitting just absorbs $I_{\text{crank}}$ deviations into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
+The H-shape constants ($w, R_{h1}, p_1, R_{h2}, p_2$), $\kappa$, and $\tau_c$ entangle eddy-brake physics, the IC8 firmware's dial-to-magnet mapping, and bearing/belt friction, so they ship as fixed defaults. $\kappa$ in particular is pinned at the previous single-Hill optimum so that letting the H-shape stretch freely doesn't shrink $\kappa$ to keep $\alpha\kappa H^2$ matched in the linear regime — which would silently break the 1000 W anchor. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$; the per-bike $\beta$ silently absorbs any unit-to-unit drift in $\tau_c$ as a small bias (~5–10% of $\lambda$ at typical riding cadences). $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so per-bike $\alpha$ fitting just absorbs $I_{\text{crank}}$ deviations into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
 
 **Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a uniform 5 mm Al disc ($R = 23$ cm) with two lead weight-rings measured by ruler:
 
@@ -119,7 +122,7 @@ $R_h$, $p$, $\kappa$, and $\tau_c$ entangle eddy-brake physics, the IC8 firmware
 
 Each belt has ~2-3 mm chamfered edges extending past the flat-top radii above (the chamfer cuts the corner, not all the way to zero thickness); the chamfer volume closes the 18 kg budget at flat-top $h$ comfortably within the ruler "less than" bounds, and the symmetric chamfers shift $I$ by <0.3% (below the flat-ring formula's precision). Lead is the only material consistent with the measured ring volumes and the 18 kg total: iron, brass, copper, and bismuth all need rings far thicker than the bounds allow (iron by 46%, brass 35%, copper 28%, bismuth 18%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m².
 
-Disc and ring geometry pin $I$ from physics; spin-downs pin the linear-regime damping $2\alpha\kappa H^2/I$ and both residual-drag terms; the 1000 W spec pins the remaining $\alpha/\kappa$ degree of freedom. The fit lands at RSS = 0.0337 across 51,792 samples — a 21% improvement over the earlier viscous-only residual drag.
+Disc and ring geometry pin $I$ from physics; spin-downs pin the linear-regime damping $2\alpha\kappa H^2/I$, the H-shape, and both residual-drag terms; the 1000 W spec pins the remaining $\alpha/\kappa$ degree of freedom. The fit lands at RSS = 0.0209 across 51,792 samples — a 38% improvement over the earlier single-Hill calibration, which itself was 21% better than the viscous-only precursor.
 
 The 1000 W anchor is the soft one — it's a marketing/regulatory ceiling, not a measurement. A ±30% error in $\alpha$ distorts predicted power by a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion. An independent $\alpha$ — Hall-probe $B$ fed into the Wouterse linear-regime formula (`analysis/physics_first_brake.py`) — would close the gap; without it, ground-truth absolute scale at high R needs an external power-meter sweep across multiple R levels.
 

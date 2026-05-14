@@ -9,7 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// plus a two-term residual drag (Coulomb + viscous):
 ///
 ///     τ_brake(R, ω) = α · H(R) · 2x / (1 + x²) + τ_c + I · β · ω
-///       with  x = κ · H(R) · ω,    H(R) = R^p / (R^p + R_h^p)
+///       with  x = κ · H(R) · ω
+///       and  H(R) = w · R^p1/(R^p1 + R_h1^p1)
+///                  + (1−w) · R^p2/(R^p2 + R_h2^p2)
 ///
 /// fit on per-revolution ω(t) trajectories from a hand-curated set of
 /// 46 video-tracked spindowns spanning R = 0 to 93 (analysis/fit_wouterse.py).
@@ -22,7 +24,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// The strict coupling τ_max·ω_c = α/κ is a single constant set by disc
 /// geometry (conductivity × thickness × pole-area × radius²) — so τ_max(R)
-/// and 1/ω_c(R) share the single Hill shape H(R).
+/// and 1/ω_c(R) share the single H(R) shape.
+///
+/// H(R) is a sum of two Hill curves, not one. A single 2-param Hill
+/// systematically over-brakes by 0.3–0.85 rad/s across R = 22..44 in the
+/// middle of the spin-down — the empirical B²(R) has a shoulder a single
+/// sigmoid can't bend to. Two Hills give the H(R) curve enough flexibility
+/// to absorb that mid-band structure, dropping the global RSS 38% over
+/// the single-Hill fit (0.0337 → 0.0209). The decomposition is empirical,
+/// not a clean physical mapping to the two magnet pairs (which both
+/// engage over the same R range and already sum to a smooth ramp in the
+/// geometric H_geom — analysis/physics_first_brake.py and fit_geom_hill.py).
+/// Plausible physical sources of the residual shoulder are yoke flux
+/// saturation, anti-polar pair coupling, or σ_Al frequency dependence,
+/// but none of those derive a clean second-Hill knob from physics.
 ///
 /// Residual drag has two components, both R-independent:
 ///   τ_c       = Coulomb (bearings + belt + seal friction) — constant in ω
@@ -32,22 +47,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// (analysis/residual_drag_shape.py). Physically that's right: bearing and
 /// belt friction are roughly constant in ω, not viscous.
 ///
-///   α   = peak torque amplitude (N·m) — anchored to 1000 W spec, shared
-///         across IC8/IC4/C6/C7 (same magnets, same actuator, same firmware)
-///   β   = viscous residual drag (1/s) — per-bike (windage + air-film)
-///   τ_c = Coulomb residual drag (N·m) — per-bike default (bearings + belt)
-///   κ   = 1/ω_c at saturation (s/rad) — geometry, fixed across bikes
-///   R_h = Hill midpoint of B²(R) — bike-firmware-calibration × geometry
-///   p   = Hill sharpness — bike-firmware-calibration × geometry
+///   α     = peak torque amplitude (N·m) — anchored to 1000 W spec, shared
+///           across IC8/IC4/C6/C7 (same magnets, same actuator, same firmware)
+///   β     = viscous residual drag (1/s) — per-bike (windage + air-film)
+///   τ_c   = Coulomb residual drag (N·m) — per-bike default (bearings + belt)
+///   κ     = 1/ω_c at saturation (s/rad) — geometry, fixed across bikes,
+///           pinned so the 1000 W anchor stays meaningful when H(R) is free
+///   w     = mixing weight on the sharp Hill — H-shape, bike-firmware × geom
+///   R_h1, p1 = sharp Hill midpoint and sharpness — H-shape
+///   R_h2, p2 = broad Hill midpoint and sharpness — H-shape
 ///
-/// [defaultRh] and [defaultP] absorb both the eddy-brake gap-vs-dial
-/// physics and whatever non-linear mapping the IC8's firmware applies
-/// between dial position and physical brake state — they're inseparable
-/// from this dataset alone, so they live with the geometry constants and
-/// aren't exposed in auto-calibration. Only β is fit per bike — α and
-/// I_crank are structurally degenerate in spin-down data (only their
-/// ratio appears in I·ω̇ = -τ), so per-bike α fitting just absorbs
-/// I_crank deviations into a wrong α. Absolute scale is the
+/// The H-shape constants ({w, R_h1, p1, R_h2, p2}) absorb both the eddy-
+/// brake gap-vs-dial physics and whatever non-linear mapping the IC8's
+/// firmware applies between dial position and physical brake state —
+/// they're inseparable from this dataset alone, so they live with the
+/// geometry constants and aren't exposed in auto-calibration. Only β is
+/// fit per bike — α and I_crank are structurally degenerate in spin-down
+/// data (only their ratio appears in I·ω̇ = -τ), so per-bike α fitting
+/// just absorbs I_crank deviations into a wrong α. Absolute scale is the
 /// [powerScale] slider's job, against an external power meter.
 /// See [Coastdown.fitBrake].
 ///
@@ -89,10 +106,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///      flux through the disc bounds the peak absorbable power. The
 ///      marketing spec is our anchor for where that ceiling sits.
 ///
-///   3. Hill shape (R_h, p), κ, β, and τ_c from a global fit on 46 video-
-///      tracked spindowns spanning R = 0 to 93. RSS = 0.0337 across
-///      51,792 samples — a 21% RSS improvement over the viscous-only
-///      residual drag the previous calibration used.
+///   3. H(R) shape ({w, R_h1, p1, R_h2, p2}), β, and τ_c from a global
+///      fit on 46 video-tracked spindowns spanning R = 0 to 93. κ pinned
+///      at the previous single-Hill optimum (0.1585) so the 1000 W anchor
+///      stays meaningful when H(R) is free. RSS = 0.0209 across 51,792
+///      samples — a 38% RSS improvement over the previous single-Hill
+///      calibration (which itself was 21% better than the viscous-only
+///      precursor).
 ///
 /// All three are mutually consistent — the data, the geometry, and the
 /// marketing spec land on the same calibration without invoking
@@ -113,16 +133,24 @@ class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
   // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1041 W).
+  // κ pinned to 0.1585 (previous single-Hill optimum) so the 1000 W
+  // anchor stays meaningful when the H(R) shape is free.
   // I_crank pinned to 9.09 (anchored to flywheel geometry: 18 kg with
   // a 5 mm uniform Al disc + lead weight-rings on both faces, side A
   // at r = 14–18 cm and side B at r = 13–17 cm). Residual drag is split
   // into Coulomb (τ_c, bearings + belt) and viscous (β, windage); R=0
   // spin-downs alone prefer this split by ~15× in RSS over viscous-only.
+  // H(R) is a sum of two Hill curves; the single-Hill fit over-braked
+  // by 0.3–0.85 rad/s across R = 22..44, two Hills close that gap at
+  // a 38% RSS improvement.
   static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0216;     // 1/s — viscous residual drag
-  static const double defaultTauC = 1.2134;     // N·m — Coulomb residual drag
-  static const double defaultRh = 74.426;       // Hill midpoint
-  static const double defaultP = 1.233;         // Hill sharpness
+  static const double defaultBeta = 0.0157;     // 1/s — viscous residual drag
+  static const double defaultTauC = 1.3582;     // N·m — Coulomb residual drag
+  static const double defaultW = 0.4467;        // mix weight on sharp Hill
+  static const double defaultRh1 = 57.616;      // sharp Hill midpoint
+  static const double defaultP1 = 2.297;        // sharp Hill sharpness
+  static const double defaultRh2 = 128.452;     // broad Hill midpoint
+  static const double defaultP2 = 0.685;        // broad Hill sharpness
   static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation
   static const double defaultICrank = 9.09;     // kg·m² (effective, at crank)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
@@ -134,18 +162,19 @@ class Calibration {
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // v8 splits residual drag into Coulomb + viscous (was viscous-only).
-  // Re-fit on the same 46 video spindowns lands at τ_c = 1.21 N·m,
-  // β = 0.0216 1/s — about half the old β absorbed into the new τ_c.
-  // Hill shape and κ shift slightly with the new degree of freedom
-  // (R_h 72.9→74.4, p 1.27→1.23, κ 0.160→0.1585). Global RSS drops
-  // 21%. Loading v7 (β, I_crank) under v8 defaults would leave τ_c
-  // at default while β reverts to its old viscous-only value, so the
-  // model becomes over-damped — wipe and reset.
-  static const String _keyAlpha = 'cal.alpha.v8';
-  static const String _keyBeta = 'cal.betaW.v8';
-  static const String _keyICrank = 'cal.iCrank.v8';
-  static const String _keyPowerScale = 'cal.powerScale.v8';
+  // v9 swaps the single 2-param Hill H(R) for a sum-of-two-Hills (5 H
+  // shape params). κ pinned to the previous single-Hill optimum 0.1585
+  // so α/κ = 1041 W stays put. Re-fit on the same 46 video spindowns
+  // lands at β = 0.0157, τ_c = 1.358 — slight rebalancing between the
+  // residual-drag terms relative to v8 (β = 0.0216, τ_c = 1.213) as
+  // the two-Hill H(R) absorbs the mid-band over-braking that v8's β
+  // was over-compensating for. Global RSS drops 38% (0.0337 → 0.0209).
+  // Loading v8 β under v9 defaults would over-damp by ~30% at low
+  // ω — wipe and reset.
+  static const String _keyAlpha = 'cal.alpha.v9';
+  static const String _keyBeta = 'cal.betaW.v9';
+  static const String _keyICrank = 'cal.iCrank.v9';
+  static const String _keyPowerScale = 'cal.powerScale.v9';
 
   double alpha;
   double beta;
@@ -176,15 +205,26 @@ class Calibration {
     );
   }
 
-  /// H(R) = R^p / (R^p + R_h^p). The single shape function driving both
-  /// τ_max(R) = α·H(R) and 1/ω_c(R) = κ·H(R) under strict Wouterse
-  /// coupling. Continuous, monotone, zero at R=0, → 1 at R→∞.
-  static double _hill(double r) {
-    if (r <= 0) return 0.0;
-    final rp = math.pow(r, defaultP).toDouble();
-    final rhp = math.pow(defaultRh, defaultP).toDouble();
+  /// H(R) = w·R^p1/(R^p1 + R_h1^p1) + (1−w)·R^p2/(R^p2 + R_h2^p2).
+  /// Sum-of-two-Hills shape driving both τ_max(R) = α·H(R) and
+  /// 1/ω_c(R) = κ·H(R) under strict Wouterse coupling. Continuous,
+  /// monotone, zero at R=0, asymptotes to a constant ≤ 1 at R→∞.
+  static double _hillTerm(double r, double rH, double p) {
+    final rp = math.pow(r, p).toDouble();
+    final rhp = math.pow(rH, p).toDouble();
     return rp / (rp + rhp);
   }
+
+  /// Public accessor for the H(R) shape function so other physics modules
+  /// (e.g. [Coastdown.fitBrake]) can reuse the same brake-shape definition
+  /// without re-deriving the Hill coefficients.
+  static double hillAt(double r) {
+    if (r <= 0) return 0.0;
+    return defaultW * _hillTerm(r, defaultRh1, defaultP1)
+        + (1.0 - defaultW) * _hillTerm(r, defaultRh2, defaultP2);
+  }
+
+  static double _hill(double r) => hillAt(r);
 
   /// Effective inertia at the crank after the user-facing [powerScale].
   /// Used both inside [tauBrakeAt] (for the residual-drag I·β·ω term)
@@ -291,6 +331,10 @@ class Calibration {
     await prefs.remove('cal.betaW.v7');
     await prefs.remove('cal.iCrank.v7');
     await prefs.remove('cal.powerScale.v7');
+    await prefs.remove('cal.alpha.v8');
+    await prefs.remove('cal.betaW.v8');
+    await prefs.remove('cal.iCrank.v8');
+    await prefs.remove('cal.powerScale.v8');
   }
 
   bool get isAtDefaults =>

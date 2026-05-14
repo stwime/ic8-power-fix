@@ -143,20 +143,16 @@ void main() {
     test('recovers β from synthetic Wouterse-linear decays', () {
       // 5 distinct R values; λ generated from the Wouterse linear-regime
       // form
-      //   λ_eff(R) = β + (2ακ/I) · H(R)²,  H(R) = R^p / (R^p + R_h^p)
-      // with α and shape held at the calibration defaults. β is the only
-      // free parameter; recovery should be near machine precision.
+      //   λ_eff(R) = β + (2ακ/I) · H(R)²
+      // with α, κ, I, and H(R) held at the calibration defaults. β is the
+      // only free parameter; recovery should be near machine precision.
       const alpha = Calibration.defaultAlpha;
       const beta = 0.045;
-      const p = Calibration.defaultP;
-      const rh = Calibration.defaultRh;
       const kappa = Calibration.defaultKappa;
       const iCrank = Calibration.defaultICrank;
-      final rhp = math.pow(rh, p).toDouble();
       double wouterseLinLambda(int r) {
         if (r == 0) return beta;
-        final rp = math.pow(r, p).toDouble();
-        final h = rp / (rp + rhp);
+        final h = Calibration.hillAt(r.toDouble());
         return beta + 2.0 * alpha * kappa * h * h / iCrank;
       }
       final allRows = <CoastdownSample>[];
@@ -178,15 +174,11 @@ void main() {
       // design row is (0, 1).
       const alpha = Calibration.defaultAlpha;
       const beta = 0.045;
-      const p = Calibration.defaultP;
-      const rh = Calibration.defaultRh;
       const kappa = Calibration.defaultKappa;
       const iCrank = Calibration.defaultICrank;
-      final rhp = math.pow(rh, p).toDouble();
       double wouterseLinLambda(int r) {
         if (r == 0) return beta;
-        final rp = math.pow(r, p).toDouble();
-        final h = rp / (rp + rhp);
+        final h = Calibration.hillAt(r.toDouble());
         return beta + 2.0 * alpha * kappa * h * h / iCrank;
       }
       final allRows = <CoastdownSample>[];

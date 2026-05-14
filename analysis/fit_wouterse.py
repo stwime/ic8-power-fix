@@ -28,12 +28,25 @@ warranted by the constraint power of our data.
 
 R-shape
 -------
-Parameterise B²(R) as a Hill curve (smooth, monotone, continuous, zero
-at R=0):
+Parameterise B²(R) as a sum of two Hill curves (smooth, monotone,
+continuous, zero at R=0):
 
-    H(R) = R^p / (R^p + R_h^p)
+    H(R) = w · R^p1/(R^p1 + R_h1^p1) + (1−w) · R^p2/(R^p2 + R_h2^p2)
 
-and pin both eddy-brake R-dependences to it via the strict Wouterse law:
+A single 2-param Hill systematically over-brakes by ~0.3–0.85 rad/s
+across R = 22..44 in the middle of the spin-down — the empirical
+B²(R) has a shoulder a single sigmoid can't bend to. Two Hills give
+the H(R) curve enough flexibility to absorb that mid-band structure.
+The decomposition is empirical, not a clean physical mapping to the
+two magnet pairs (which both engage over the same R range and already
+sum to a smooth ramp in the geometric H_geom — see physics_first_brake.py
+and fit_geom_hill.py). Plausible physical sources of the residual
+shoulder are yoke flux saturation, anti-polar pair coupling varying
+with proximity, or σ_Al frequency dependence — none clean enough to
+derive a single second-Hill knob from physics.
+
+Pin both eddy-brake R-dependences to the same H(R) via the strict
+Wouterse law:
 
     τ_max(R) = α · H(R)
     1/ω_c(R) = κ · H(R)
@@ -41,9 +54,10 @@ and pin both eddy-brake R-dependences to it via the strict Wouterse law:
 so τ_max(R)·ω_c(R) = α/κ — a single constant set by disc geometry
 (conductivity × thickness × pole-area × radius²). Plus the residual:
 
-    τ_total(R, ω) = I·β·ω + 2·α·κ·H(R)²·ω / (1 + (κ·H(R)·ω)²)
+    τ_total(R, ω) = τ_c + I·β·ω + 2·α·κ·H(R)²·ω / (1 + (κ·H(R)·ω)²)
 
-Five free parameters total — {α, R_h, p, κ, β}.
+Eight free parameters total — {α, w, R_h1, p1, R_h2, p2, κ, β, τ_c}
+minus α pinned to the 1000 W spec.
 
 Fit
 ---
@@ -96,22 +110,33 @@ I_CRANK = 9.09  # kg·m² (effective, at the crank). Derived from geometry,
                 #   I_crank   = g²·I_flywheel = 9.09 kg·m²   (g = 4.5)
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
-# plus the Hill shape — α and κ slide along a degenerate ridge unless
+# plus the H(R) shape — α and κ slide along a degenerate ridge unless
 # one is anchored.
 #
 # Our coastdown set sits mostly in the linear-damping regime ω << ω_c,
 # so the bell-curve saturation isn't directly observed. Releasing α
-# with the Hill shape free walks the optimizer to the upper bound
+# with the H(R) shape free walks the optimizer to the upper bound
 # (α/κ → ∞, model degenerates into power-law). α has to be set by an
 # external prior.
 #
 # α = 165 N·m anchors α/κ ≈ 1000 W, matching the manufacturer's max-
 # output spec. This anchors absolute scale without invoking perceived
 # effort, and keeps the asymptotic saturation ceiling at a defensible,
-# specification-grounded number. RSS = 0.0431 across 51,792 samples.
+# specification-grounded number.
 #
-# See analysis/physics_first_brake.py for the brake-geometry derivation.
+# κ is also pinned (KAPPA_PINNED below) so the 1000 W anchor stays
+# meaningful: with five H-shape knobs the optimizer would otherwise
+# shrink κ to keep ακH²·ω matched in the linear regime, since H_max
+# is unconstrained by the data. Pinning κ at the previous single-Hill
+# optimum (0.1585) preserves α/κ = 1041 W and forces all the model
+# flexibility into the H(R) shape, which is where the structural
+# mid-band sag actually lives.
+#
+# See analysis/physics_first_brake.py for the brake-geometry derivation
+# and analysis/fit_h_alternatives.py for the comparison that picked
+# the two-Hill form over Richards (3-param) and 8-knot monotone spline.
 ALPHA_PINNED = 165.0
+KAPPA_PINNED = 0.1585
 
 
 # ---------------------------------------------------------------------------
@@ -160,19 +185,28 @@ def hill(R: float, R_h: float, p: float) -> float:
     return R**p / (R**p + R_h**p)
 
 
+def H_two(R: float, w: float, R_h1: float, p1: float,
+          R_h2: float, p2: float) -> float:
+    """Sum-of-two-Hills H(R), [0,1)-valued, monotone, zero at R=0."""
+    if R <= 0:
+        return 0.0
+    return w * hill(R, R_h1, p1) + (1.0 - w) * hill(R, R_h2, p2)
+
+
 def tau_total(R: float, omega: float, params) -> float:
     """Strict-Wouterse brake + Coulomb + viscous residual drag at the crank.
 
-    params = (κ, R_h, p, β, τ_c). α is held fixed at ALPHA_PINNED. Single
-    H(R) drives both τ_max and 1/ω_c via the strict Wouterse coupling
-    τ_max ∝ B², ω_c ∝ 1/B². Residual drag is Coulomb (τ_c, constant,
-    bearings + belt friction) plus viscous (β, e.g. windage, air film).
-    The Coulomb term dominates at low ω and straightens the spin-down
+    params = (w, R_h1, p1, R_h2, p2, β, τ_c). α is held fixed at
+    ALPHA_PINNED and κ at KAPPA_PINNED. Sum-of-two-Hills H(R) drives
+    both τ_max and 1/ω_c via the strict Wouterse coupling τ_max ∝ B²,
+    ω_c ∝ 1/B². Residual drag is Coulomb (τ_c, constant, bearings +
+    belt friction) plus viscous (β, e.g. windage, air film). The
+    Coulomb term dominates at low ω and straightens the spin-down
     curve where pure viscous would over-curve.
     """
-    kappa, R_h, p, beta, tau_c = params
-    H = hill(R, R_h, p)
-    x = kappa * H * omega
+    w, R_h1, p1, R_h2, p2, beta, tau_c = params
+    H = H_two(R, w, R_h1, p1, R_h2, p2)
+    x = KAPPA_PINNED * H * omega
     tau_eddy = ALPHA_PINNED * H * 2.0 * x / (1.0 + x * x)
     # For ω > 0 (always true within a segment) Coulomb is simply +τ_c.
     tau_residual = tau_c + I_CRANK * beta * omega
@@ -215,20 +249,21 @@ def residuals(params, segments):
 
 def run_fit(segments, x0=None):
     if x0 is None:
-        # Warm start: previous viscous-only optimum for the Hill params,
-        # τ_c from the R=0 segments fit (residual_drag_shape.py).
+        # Warm start: two-Hill optimum from fit_h_alternatives.py.
         x0 = np.array([
-            0.16,    # κ    (s/rad)
-            73.0,    # R_h  (Hill midpoint)
-            1.27,    # p    (Hill sharpness)
-            0.014,   # β    (1/s)
-            1.5,     # τ_c  (N·m)
+            0.50,    # w      (mixing weight on H1)
+            30.0,    # R_h1   (sharp/back Hill midpoint)
+            2.50,    # p1     (sharp Hill sharpness)
+            80.0,    # R_h2   (broad/front Hill midpoint)
+            2.00,    # p2     (broad Hill sharpness)
+            0.022,   # β      (1/s)
+            1.20,    # τ_c    (N·m)
         ])
-    lo = np.array([1e-4, 5.0,  0.5, 0.0, 0.0])
-    hi = np.array([5.0,  500., 10.0, 0.5, 20.0])
+    lo = np.array([0.0,  5.0,   0.5,  5.0,   0.5,  0.0,  0.0])
+    hi = np.array([1.0,  500.,  10.,  500.,  10.,  0.5,  20.0])
     res = least_squares(residuals, x0, args=(segments,),
                         bounds=(lo, hi), x_scale="jac",
-                        max_nfev=400, verbose=2)
+                        max_nfev=600, verbose=2)
     return res
 
 
@@ -258,10 +293,11 @@ def per_segment_lambda_data(segments):
 
 
 def plot_R_curves(params, segments, out_path):
-    kappa, R_h, p, beta, tau_c = params
+    w, R_h1, p1, R_h2, p2, beta, tau_c = params
     alpha = ALPHA_PINNED
+    kappa = KAPPA_PINNED
     Rg = np.linspace(0.01, 100, 600)
-    H = np.array([hill(R, R_h, p) for R in Rg])
+    H = np.array([H_two(R, w, R_h1, p1, R_h2, p2) for R in Rg])
     tau_max = alpha * H
     inv_omc = kappa * H
     safe_inv = np.where(inv_omc > 1e-9, inv_omc, np.nan)
@@ -299,9 +335,10 @@ def plot_R_curves(params, segments, out_path):
     ax.legend(fontsize=9)
 
     fig.suptitle(
-        f"Strict-Wouterse fit:  α={alpha:.2f}  R_h={R_h:.1f}  "
-        f"p={p:.2f}  κ={kappa:.4f}  β={beta:.4f}",
-        fontsize=11, weight="bold")
+        f"Two-Hill Wouterse fit:  α={alpha:.0f} (pinned)  κ={kappa:.4f} (pinned)  "
+        f"w={w:.3f}  R_h1={R_h1:.1f}  p1={p1:.2f}  R_h2={R_h2:.1f}  p2={p2:.2f}  "
+        f"β={beta:.4f}  τ_c={tau_c:.3f}",
+        fontsize=10, weight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(out_path, dpi=130)
     plt.close()
@@ -348,10 +385,11 @@ def plot_lambda_compare(params, points_data, out_path):
     so a log-linear λ̂ doesn't apply — the curve diverges from data
     points there, which is expected and is the whole point of the
     Wouterse model."""
-    kappa, R_h, p, beta, tau_c = params
+    w, R_h1, p1, R_h2, p2, beta, tau_c = params
     alpha = ALPHA_PINNED
+    kappa = KAPPA_PINNED
     Rg = np.linspace(0, 100, 500)
-    H = np.array([hill(R, R_h, p) for R in Rg])
+    H = np.array([H_two(R, w, R_h1, p1, R_h2, p2) for R in Rg])
     lam_lin = beta + 2.0 * alpha * kappa * (H * H) / I_CRANK
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -397,17 +435,21 @@ def main():
     print(f"collected {len(segments)} video segments "
           f"({sum(len(s['t']) for s in segments)} samples)")
 
-    print("\n=== global strict-Wouterse fit ===")
+    print("\n=== global two-Hill strict-Wouterse fit ===")
     res = run_fit(segments)
     params = res.x
-    kappa, R_h, p, beta, tau_c = params
+    w, R_h1, p1, R_h2, p2, beta, tau_c = params
     alpha = ALPHA_PINNED
+    kappa = KAPPA_PINNED
     omega_c_sat = 1.0 / kappa
     print("\n=== fit ===")
-    print(f"  α     = {alpha:.4f}     N·m   (peak torque amplitude)")
-    print(f"  R_h   = {R_h:.3f}     (Hill midpoint)")
-    print(f"  p     = {p:.3f}      (Hill sharpness)")
-    print(f"  κ     = {kappa:.4f}     s/rad (= 1/ω_c at saturation)")
+    print(f"  α     = {alpha:.4f}     N·m   (peak torque amplitude, pinned)")
+    print(f"  κ     = {kappa:.4f}     s/rad (1/ω_c at saturation, pinned)")
+    print(f"  w     = {w:.4f}      (mix weight on H1)")
+    print(f"  R_h1  = {R_h1:.3f}     (sharp Hill midpoint)")
+    print(f"  p1    = {p1:.3f}      (sharp Hill sharpness)")
+    print(f"  R_h2  = {R_h2:.3f}     (broad Hill midpoint)")
+    print(f"  p2    = {p2:.3f}      (broad Hill sharpness)")
     print(f"  β     = {beta:.4f}     1/s   (viscous residual drag)")
     print(f"  τ_c   = {tau_c:.4f}     N·m   (Coulomb residual drag)")
     print(f"  ω_c at saturation = {omega_c_sat:.2f} rad/s "
@@ -426,8 +468,13 @@ def main():
 
     out_json = OUT_DIR / "fit.json"
     out_json.write_text(json.dumps({
-        "alpha": float(alpha), "R_h": float(R_h), "p": float(p),
-        "kappa": float(kappa), "beta": float(beta),
+        "alpha": float(alpha),
+        "kappa": float(kappa),
+        "w": float(w),
+        "R_h1": float(R_h1), "p1": float(p1),
+        "R_h2": float(R_h2), "p2": float(p2),
+        "beta": float(beta),
+        "tau_c": float(tau_c),
         "omega_c_at_saturation": float(omega_c_sat),
         "tau_max_times_omega_c": float(alpha / kappa),
         "rss_norm": float(0.5 * (res.fun**2).sum()),

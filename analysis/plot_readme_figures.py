@@ -35,11 +35,14 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 ALPHA = 165.0
-BETA = 0.0216
-RH = 74.426
-P_EXP = 1.233
+BETA = 0.0157
+TAU_C = 1.3582
+W_MIX = 0.4467
+RH1 = 57.616
+P1 = 2.297
+RH2 = 128.452
+P2 = 0.685
 KAPPA = 0.1585
-TAU_C = 1.2134
 I_CRANK = 9.09
 POWER_SCALE = 1.00
 
@@ -50,11 +53,17 @@ IC8_R_EXP = 0.83
 IC8_CAD_EXP = 1.5
 
 
+def _hill_term(r, rh, p):
+    return r ** p / (r ** p + rh ** p)
+
+
 def hill(r):
+    """Sum-of-two-Hills H(R), matching Calibration.hillAt in bridge code."""
     r = np.asarray(r, dtype=float)
     h = np.zeros_like(r)
     m = r > 0
-    h[m] = r[m] ** P_EXP / (r[m] ** P_EXP + RH ** P_EXP)
+    h[m] = (W_MIX * _hill_term(r[m], RH1, P1)
+            + (1.0 - W_MIX) * _hill_term(r[m], RH2, P2))
     return h
 
 

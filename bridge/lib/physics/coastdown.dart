@@ -359,8 +359,6 @@ class CoastdownDetector {
 BrakeFit fitBrake(
   List<CoastdownPoint> points, {
   double alpha = Calibration.defaultAlpha,
-  double power = Calibration.defaultP,
-  double rh = Calibration.defaultRh,
   double kappa = Calibration.defaultKappa,
   double iCrank = Calibration.defaultICrank,
 }) {
@@ -372,13 +370,11 @@ BrakeFit fitBrake(
     throw ArgumentError('need ≥2 distinct R values, got ${distinctR.length}');
   }
 
-  final rhp = math.pow(rh, power).toDouble();
   final scale = 2.0 * kappa / iCrank;
 
   double designAt(int r) {
-    if (r == 0) return 0.0;
-    final rp = math.pow(r, power).toDouble();
-    final h = rp / (rp + rhp);
+    if (r <= 0) return 0.0;
+    final h = Calibration.hillAt(r.toDouble());
     return scale * h * h;
   }
 
