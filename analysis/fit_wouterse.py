@@ -161,17 +161,21 @@ def hill(R: float, R_h: float, p: float) -> float:
 
 
 def tau_total(R: float, omega: float, params) -> float:
-    """Strict-Wouterse brake + linear residual drag, evaluated at the crank.
+    """Strict-Wouterse brake + Coulomb + viscous residual drag at the crank.
 
-    params = (κ, R_h, p, β). α is held fixed at ALPHA_PINNED. Single H(R)
-    drives both τ_max and 1/ω_c via the strict Wouterse coupling
-    τ_max ∝ B², ω_c ∝ 1/B².
+    params = (κ, R_h, p, β, τ_c). α is held fixed at ALPHA_PINNED. Single
+    H(R) drives both τ_max and 1/ω_c via the strict Wouterse coupling
+    τ_max ∝ B², ω_c ∝ 1/B². Residual drag is Coulomb (τ_c, constant,
+    bearings + belt friction) plus viscous (β, e.g. windage, air film).
+    The Coulomb term dominates at low ω and straightens the spin-down
+    curve where pure viscous would over-curve.
     """
-    kappa, R_h, p, beta = params
+    kappa, R_h, p, beta, tau_c = params
     H = hill(R, R_h, p)
     x = kappa * H * omega
     tau_eddy = ALPHA_PINNED * H * 2.0 * x / (1.0 + x * x)
-    tau_residual = I_CRANK * beta * omega
+    # For ω > 0 (always true within a segment) Coulomb is simply +τ_c.
+    tau_residual = tau_c + I_CRANK * beta * omega
     return tau_eddy + tau_residual
 
 
@@ -211,14 +215,17 @@ def residuals(params, segments):
 
 def run_fit(segments, x0=None):
     if x0 is None:
+        # Warm start: previous viscous-only optimum for the Hill params,
+        # τ_c from the R=0 segments fit (residual_drag_shape.py).
         x0 = np.array([
-            0.10,    # κ    (s/rad)
-            70.0,    # R_h  (Hill midpoint)
-            3.0,     # p    (Hill sharpness)
-            0.04,    # β    (1/s)
+            0.16,    # κ    (s/rad)
+            73.0,    # R_h  (Hill midpoint)
+            1.27,    # p    (Hill sharpness)
+            0.014,   # β    (1/s)
+            1.5,     # τ_c  (N·m)
         ])
-    lo = np.array([1e-4, 5.0,  0.5, 0.0])
-    hi = np.array([5.0,  500., 10.0, 0.5])
+    lo = np.array([1e-4, 5.0,  0.5, 0.0, 0.0])
+    hi = np.array([5.0,  500., 10.0, 0.5, 20.0])
     res = least_squares(residuals, x0, args=(segments,),
                         bounds=(lo, hi), x_scale="jac",
                         max_nfev=400, verbose=2)
@@ -251,7 +258,7 @@ def per_segment_lambda_data(segments):
 
 
 def plot_R_curves(params, segments, out_path):
-    kappa, R_h, p, beta = params
+    kappa, R_h, p, beta, tau_c = params
     alpha = ALPHA_PINNED
     Rg = np.linspace(0.01, 100, 600)
     H = np.array([hill(R, R_h, p) for R in Rg])
@@ -341,7 +348,7 @@ def plot_lambda_compare(params, points_data, out_path):
     so a log-linear λ̂ doesn't apply — the curve diverges from data
     points there, which is expected and is the whole point of the
     Wouterse model."""
-    kappa, R_h, p, beta = params
+    kappa, R_h, p, beta, tau_c = params
     alpha = ALPHA_PINNED
     Rg = np.linspace(0, 100, 500)
     H = np.array([hill(R, R_h, p) for R in Rg])
@@ -393,7 +400,7 @@ def main():
     print("\n=== global strict-Wouterse fit ===")
     res = run_fit(segments)
     params = res.x
-    kappa, R_h, p, beta = params
+    kappa, R_h, p, beta, tau_c = params
     alpha = ALPHA_PINNED
     omega_c_sat = 1.0 / kappa
     print("\n=== fit ===")
@@ -401,7 +408,8 @@ def main():
     print(f"  R_h   = {R_h:.3f}     (Hill midpoint)")
     print(f"  p     = {p:.3f}      (Hill sharpness)")
     print(f"  κ     = {kappa:.4f}     s/rad (= 1/ω_c at saturation)")
-    print(f"  β     = {beta:.4f}     1/s   (residual drag)")
+    print(f"  β     = {beta:.4f}     1/s   (viscous residual drag)")
+    print(f"  τ_c   = {tau_c:.4f}     N·m   (Coulomb residual drag)")
     print(f"  ω_c at saturation = {omega_c_sat:.2f} rad/s "
           f"= {omega_c_sat*60/(2*math.pi):.1f} crank-rpm")
     print(f"  τ_max·ω_c = α/κ = {alpha/kappa:.1f} W "

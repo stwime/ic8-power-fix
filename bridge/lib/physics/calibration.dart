@@ -5,27 +5,37 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Tunable physics constants — split from [Constants] so they can be edited at
 /// runtime via the settings screen and persisted across app launches.
 ///
-/// Brake torque uses the strict-Wouterse permanent-magnet eddy-brake model:
+/// Brake torque uses the strict-Wouterse permanent-magnet eddy-brake model
+/// plus a two-term residual drag (Coulomb + viscous):
 ///
-///     τ_brake(R, ω) = α · H(R) · 2x / (1 + x²)   with  x = κ · H(R) · ω
-///     H(R) = R^p / (R^p + R_h^p)
+///     τ_brake(R, ω) = α · H(R) · 2x / (1 + x²) + τ_c + I · β · ω
+///       with  x = κ · H(R) · ω,    H(R) = R^p / (R^p + R_h^p)
 ///
 /// fit on per-revolution ω(t) trajectories from a hand-curated set of
 /// 46 video-tracked spindowns spanning R = 0 to 93 (analysis/fit_wouterse.py).
 ///
-/// Three regimes in ω at fixed R:
-///   ω << ω_c :  τ ≈ (2τ_max/ω_c)·ω           (linear damping)
-///   ω = ω_c  :  τ = τ_max  with  τ_max = α·H(R), ω_c = 1/(κ·H(R))
-///   ω >> ω_c :  τ ≈ 2τ_max·(ω_c/ω)           (induced field opposes source)
+/// Three regimes in ω at fixed R (eddy term only — residual drag adds on
+/// independently):
+///   ω << ω_c :  τ_eddy ≈ (2τ_max/ω_c)·ω      (linear damping)
+///   ω = ω_c  :  τ_eddy = τ_max  with  τ_max = α·H(R), ω_c = 1/(κ·H(R))
+///   ω >> ω_c :  τ_eddy ≈ 2τ_max·(ω_c/ω)      (induced field opposes source)
 ///
 /// The strict coupling τ_max·ω_c = α/κ is a single constant set by disc
 /// geometry (conductivity × thickness × pole-area × radius²) — so τ_max(R)
-/// and 1/ω_c(R) share the single Hill shape H(R). Plus a residual drag
-/// τ_residual(ω) = I·β·ω representing bearings + air at R = 0.
+/// and 1/ω_c(R) share the single Hill shape H(R).
+///
+/// Residual drag has two components, both R-independent:
+///   τ_c       = Coulomb (bearings + belt + seal friction) — constant in ω
+///   I · β · ω = viscous (windage + air-film) — linear in ω
+/// Isolating the R=0 spin-downs (no eddy contribution) and fitting drag-
+/// shape alone, Coulomb + viscous beats viscous-only by ~15× in RSS
+/// (analysis/residual_drag_shape.py). Physically that's right: bearing and
+/// belt friction are roughly constant in ω, not viscous.
 ///
 ///   α   = peak torque amplitude (N·m) — anchored to 1000 W spec, shared
 ///         across IC8/IC4/C6/C7 (same magnets, same actuator, same firmware)
-///   β   = residual drag at R=0 (1/s) — per-bike (bearings + belt + air)
+///   β   = viscous residual drag (1/s) — per-bike (windage + air-film)
+///   τ_c = Coulomb residual drag (N·m) — per-bike default (bearings + belt)
 ///   κ   = 1/ω_c at saturation (s/rad) — geometry, fixed across bikes
 ///   R_h = Hill midpoint of B²(R) — bike-firmware-calibration × geometry
 ///   p   = Hill sharpness — bike-firmware-calibration × geometry
@@ -71,17 +81,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 ///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
 ///      Under strict Wouterse, the asymptotic peak brake power at any
-///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.160 and
-///      α/κ = 1031 W — matching the 1000 W rating to ~3%. The saturation
+///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.1585 and
+///      α/κ = 1041 W — matching the 1000 W rating to ~4%. The saturation
 ///      bell-curve isn't directly observed in our coastdowns (which sit
 ///      in the linear-damping regime ω << ω_c), but it's a real physical
 ///      constraint of permanent-magnet eddy brakes — finite magnetic
 ///      flux through the disc bounds the peak absorbable power. The
 ///      marketing spec is our anchor for where that ceiling sits.
 ///
-///   3. Hill shape (R_h, p), κ, and β from a global fit on 46 video-
-///      tracked spindowns spanning R = 0 to 93. RSS = 0.0431 across
-///      51792 samples.
+///   3. Hill shape (R_h, p), κ, β, and τ_c from a global fit on 46 video-
+///      tracked spindowns spanning R = 0 to 93. RSS = 0.0337 across
+///      51,792 samples — a 21% RSS improvement over the viscous-only
+///      residual drag the previous calibration used.
 ///
 /// All three are mutually consistent — the data, the geometry, and the
 /// marketing spec land on the same calibration without invoking
@@ -101,16 +112,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1031 W).
+  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1041 W).
   // I_crank pinned to 9.09 (anchored to flywheel geometry: 18 kg with
   // a 5 mm uniform Al disc + lead weight-rings on both faces, side A
-  // at r = 14–18 cm and side B at r = 13–17 cm). κ rescaled with
-  // I_crank since the spindown fit constrains 2ακ/I, not κ alone.
+  // at r = 14–18 cm and side B at r = 13–17 cm). Residual drag is split
+  // into Coulomb (τ_c, bearings + belt) and viscous (β, windage); R=0
+  // spin-downs alone prefer this split by ~15× in RSS over viscous-only.
   static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0389;     // 1/s — residual drag at R=0
-  static const double defaultRh = 72.858;       // Hill midpoint
-  static const double defaultP = 1.265;         // Hill sharpness
-  static const double defaultKappa = 0.1600;    // s/rad — 1/ω_c at saturation
+  static const double defaultBeta = 0.0216;     // 1/s — viscous residual drag
+  static const double defaultTauC = 1.2134;     // N·m — Coulomb residual drag
+  static const double defaultRh = 74.426;       // Hill midpoint
+  static const double defaultP = 1.233;         // Hill sharpness
+  static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation
   static const double defaultICrank = 9.09;     // kg·m² (effective, at crank)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
@@ -121,17 +134,18 @@ class Calibration {
   static const double powerScaleMin = 0.5;
   static const double powerScaleMax = 2.0;
 
-  // v7 marks another belt-radii remeasurement (9.19 → 9.09): both rings
-  // now span 4 cm radially — side A at r = 14–18 cm and side B at r =
-  // 13–17 cm — at the same h ≤ 2.0 / 1.5 cm ruler bounds. I_crank fell
-  // ~1%; κ rescales by the same factor to preserve the linear-regime
-  // fit (the spindown data constrains 2ακ/I, not κ alone). Loading v6
-  // (β, I_crank) under v7 κ/I defaults would slightly distort λ(R) —
-  // wipe and reset.
-  static const String _keyAlpha = 'cal.alpha.v7';
-  static const String _keyBeta = 'cal.betaW.v7';
-  static const String _keyICrank = 'cal.iCrank.v7';
-  static const String _keyPowerScale = 'cal.powerScale.v7';
+  // v8 splits residual drag into Coulomb + viscous (was viscous-only).
+  // Re-fit on the same 46 video spindowns lands at τ_c = 1.21 N·m,
+  // β = 0.0216 1/s — about half the old β absorbed into the new τ_c.
+  // Hill shape and κ shift slightly with the new degree of freedom
+  // (R_h 72.9→74.4, p 1.27→1.23, κ 0.160→0.1585). Global RSS drops
+  // 21%. Loading v7 (β, I_crank) under v8 defaults would leave τ_c
+  // at default while β reverts to its old viscous-only value, so the
+  // model becomes over-damped — wipe and reset.
+  static const String _keyAlpha = 'cal.alpha.v8';
+  static const String _keyBeta = 'cal.betaW.v8';
+  static const String _keyICrank = 'cal.iCrank.v8';
+  static const String _keyPowerScale = 'cal.powerScale.v8';
 
   double alpha;
   double beta;
@@ -178,16 +192,17 @@ class Calibration {
   /// and the transient terms scale linearly with [powerScale].
   double get effectiveICrank => iCrank * powerScale;
 
-  /// Brake torque + bearing/air residual drag at the crank, in N·m.
-  /// Sum of the eddy-current Wouterse term and a linear residual. The
-  /// user-facing [powerScale] multiplies α (eddy term) and I_crank
-  /// (residual term) by the same factor, so τ_brake scales linearly
-  /// with [powerScale] without distorting cadence or R shape.
+  /// Brake torque + Coulomb + viscous residual drag at the crank, in N·m.
+  /// Sum of the eddy-current Wouterse term, a constant Coulomb term, and
+  /// a linear viscous term. The user-facing [powerScale] multiplies α
+  /// (eddy term), I_crank (viscous residual term), and τ_c (Coulomb
+  /// residual term) by the same factor, so τ_brake scales linearly with
+  /// [powerScale] without distorting cadence or R shape.
   double tauBrakeAt(double r, double omega) {
     final h = _hill(r);
     final x = defaultKappa * h * omega;
     final tauEddy = (alpha * powerScale) * h * 2.0 * x / (1.0 + x * x);
-    final tauResidual = effectiveICrank * beta * omega;
+    final tauResidual = powerScale * (defaultTauC + iCrank * beta * omega);
     return tauEddy + tauResidual;
   }
 
@@ -197,8 +212,13 @@ class Calibration {
   }
 
   /// Effective decay rate λ(R) in the low-ω linear regime. Equal to
-  /// −d(ln ω)/dt for an unloaded coastdown at small ω. Used by
-  /// [Coastdown.fitBrake] which fits log-linear λ̂ on user coastdowns.
+  /// −d(ln ω)/dt for an unloaded coastdown at small ω, ignoring the
+  /// constant Coulomb contribution (which shows up as a small additive
+  /// term, not as a multiplicative rate). Used by [Coastdown.fitBrake]
+  /// which fits log-linear λ̂ on user coastdowns — that estimator is
+  /// slightly biased high by Coulomb at low ω, and the per-bike β fit
+  /// silently absorbs the bias. The bias is ~5–10% of λ at typical
+  /// riding cadences (70–110 rpm).
   ///   λ_lin(R) = β + 2·α·κ·H(R)² / I
   /// [powerScale] cancels because effective α and effective I scale
   /// together, so the modelled coastdown rate is invariant to the
@@ -267,6 +287,10 @@ class Calibration {
     await prefs.remove('cal.betaW.v6');
     await prefs.remove('cal.iCrank.v6');
     await prefs.remove('cal.powerScale.v6');
+    await prefs.remove('cal.alpha.v7');
+    await prefs.remove('cal.betaW.v7');
+    await prefs.remove('cal.iCrank.v7');
+    await prefs.remove('cal.powerScale.v7');
   }
 
   bool get isAtDefaults =>
