@@ -81,11 +81,15 @@ def H_geom_warped(R: float, q: float) -> float:
 
 
 def tau_total(R: float, omega: float, params) -> float:
-    alpha, kappa, beta, q = params
+    alpha, kappa, beta, q, tau_c = params
     H = H_geom_warped(R, q)
     x = kappa * H * omega
     tau_eddy = alpha * H * 2.0 * x / (1.0 + x * x)
-    tau_residual = I_CRANK * beta * omega
+    # τ_c is Coulomb (constant, opposing motion). For ω > 0 the data covers
+    # exclusively, sign(ω) = +1 and the term is simply +τ_c. The model never
+    # integrates past ω = 0 within a segment, so we don't handle the sign
+    # flip / static-friction case here.
+    tau_residual = tau_c + I_CRANK * beta * omega
     return tau_eddy + tau_residual
 
 
@@ -118,9 +122,9 @@ def residuals(params, segments):
 
 
 def run_fit(segments, x0):
-    #              α       κ     β    q
-    lo = np.array([1.0,    1e-4, 0.0, 0.2])
-    hi = np.array([1000.0, 5.0,  0.5, 5.0])
+    #              α       κ     β    q    τ_c
+    lo = np.array([1.0,    1e-4, 0.0, 0.2, 0.0])
+    hi = np.array([1000.0, 5.0,  0.5, 5.0, 20.0])
     res = least_squares(residuals, x0, args=(segments,),
                         bounds=(lo, hi), x_scale="jac",
                         max_nfev=600, verbose=2)
@@ -167,21 +171,23 @@ def main():
     print(f"using H_geom from physics_first_brake "
           f"(a={pfb.A_MAG*100:.2f} cm dia, L_m={pfb.L_MAG*1000:.1f} mm)\n")
 
-    # Warm-start: empirical-Hill values for {α, κ, β}, q=3 to stretch the
-    # geometric H_geom toward the empirical-Hill shape (linear H_geom hits
-    # H=0.5 around R=35 vs empirical's R=73, so we need q ≈ ln(.35)/ln(.73)
-    # ≈ 3.3).
-    x0 = np.array([165.0, 0.160, 0.04, 3.0])
+    # Warm-start: R=0 segments fit independently prefer τ_c=1.5 N·m and
+    # β=0.014 1/s for the residual drag (see analysis/residual_drag_shape.py).
+    # Start the global fit from there to avoid the local minimum that the
+    # earlier guess (β=0.04, τ_c=1.5) walks into.
+    x0 = np.array([109.0, 0.07, 0.014, 1.24, 1.5])
     res = run_fit(segments, x0)
-    alpha, kappa, beta, q = res.x
+    alpha, kappa, beta, q, tau_c = res.x
     rss = 0.5 * float((res.fun ** 2).sum())
     two_ak = 2.0 * alpha * kappa
     a_over_k = alpha / kappa
 
-    print("\n=== H_geom + cam-warp fit ({α, κ, β, q} free; s=1 from geometry) ===")
+    print("\n=== H_geom + cam-warp + Coulomb residual fit "
+          "({α, κ, β, q, τ_c} free; s=1 from geometry) ===")
     print(f"  α     = {alpha:>8.3f} N·m")
     print(f"  κ     = {kappa:>8.4f} s/rad")
-    print(f"  β     = {beta:>8.4f} 1/s")
+    print(f"  β     = {beta:>8.4f} 1/s   (viscous residual)")
+    print(f"  τ_c   = {tau_c:>8.4f} N·m   (Coulomb residual)")
     print(f"  q     = {q:>8.3f}        (cam nonlinearity; 1 = linear)")
     print(f"  2ακ   = {two_ak:>8.3f} N·m·s/rad")
     print(f"  α/κ   = {a_over_k:>8.1f} W   (asymptotic peak)")

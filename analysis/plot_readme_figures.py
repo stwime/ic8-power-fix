@@ -35,10 +35,11 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 ALPHA = 165.0
-BETA = 0.0389
-RH = 72.858
-P_EXP = 1.265
-KAPPA = 0.1600
+BETA = 0.0216
+RH = 74.426
+P_EXP = 1.233
+KAPPA = 0.1585
+TAU_C = 1.2134
 I_CRANK = 9.09
 POWER_SCALE = 1.00
 
@@ -63,7 +64,7 @@ def bridge_steady(r, omega):
     h = hill(r)
     x = KAPPA * h * omega
     tau_eddy = ALPHA * POWER_SCALE * h * 2.0 * x / (1.0 + x * x)
-    tau_residual = I_CRANK * POWER_SCALE * BETA * omega
+    tau_residual = POWER_SCALE * (TAU_C + I_CRANK * BETA * omega)
     return (tau_eddy + tau_residual) * omega
 
 
@@ -221,7 +222,7 @@ def _tau_model(R, omega):
     h = float(hill(np.array([R]))[0])
     x = KAPPA * h * omega
     tau_eddy = ALPHA * h * 2.0 * x / (1.0 + x * x)
-    tau_residual = I_CRANK * BETA * omega
+    tau_residual = TAU_C + I_CRANK * BETA * omega
     return tau_eddy + tau_residual
 
 
