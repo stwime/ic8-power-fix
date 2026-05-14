@@ -20,16 +20,11 @@ There's no resistance control. The bike has a manual dial, so ERG mode isn't pos
 
 ## Why use this
 
-- **Right shape across the resistance range.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R. On the reference unit the bike reads low at low R (warm-ups feel harder than they are) and high at race-pace R.
-- **Honest power during accelerations.** When you stand up and surge from 80 to 110 rpm, you're also spinning up an 18 kg flywheel. That's an extra 100–150 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt` so the surge reads at full value.
-- **Honest power during coastdowns and recoveries.** When you stop pushing, the bike keeps reporting `R × cad^1.5`. The bridge subtracts the kinetic energy flowing out of the flywheel into the brake, so power drops to zero on time.
+- **Right shape across the resistance range.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R.
+- **Honest power during transients.** Surging from 80 to 110 rpm spins up an 18 kg flywheel — an extra 100–150 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt`, so surges read at full value and coastdowns drop to zero on time.
 - **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which sharpens the acceleration math during fast transients.
-- **Calibrates to your bike's drivetrain.** Auto-calibrate (Settings → Auto-calibrate) takes 5–10 minutes: pedal up to at least 70 rpm, lift both feet off so the pedals spin freely, wait for them to stop, then change the resistance and repeat — at least 3 different resistance levels. It fits your residual drivetrain drag from the resulting flywheel-decay curves. With an outdoor power meter, the Power scale slider pins the absolute scale against ground truth.
+- **Low-R drivetrain fine-tune.** Auto-calibrate (Settings → Auto-calibrate) refits the residual drivetrain drag from flywheel-decay curves — 5–10 minutes, on-device. It matters most at warm-up resistances; at race-pace R the eddy brake dominates. For absolute scale, use the Power scale slider against an external power meter.
 - **Standard FTMS out, no firmware mods.** The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works. The bike doesn't change.
-- **Production-grade plumbing.**
-  - Auto-reconnect with backoff if the BLE link drops.
-  - Wakelock keeps the bridge phone awake.
-  - The bridge advertises a manual brake (no ERG/sim) so training apps cleanly fall back to power-only mode.
 
 ## Supported models
 
@@ -41,7 +36,7 @@ an IC8 and apply directly.
 |--------------------------|-------------------------------------------------|
 | **Schwinn IC8 / IC4**    | Reference platform. Ships calibrated.           |
 | **Bowflex C6 / C7**      | Same hardware. Ships calibrated.                |
-| Other FTMS indoor bikes  | Should work if they broadcast resistance over FTMS. Run Auto-calibrate first, then verify scale against an outdoor power meter if you have one. |
+| Other FTMS indoor bikes  | Cadence + KE math will be right, but the brake shape, magnitude, and flywheel inertia are all pinned to the IC8 family. Auto-calibrate only refits β (drivetrain drag), so a bike with different brake hardware or a different flywheel will read wrong and the in-app knobs can't fix it. |
 
 ## Build and run
 
@@ -56,10 +51,10 @@ grant permissions, then tap **Find bike**, tap your bike, and the
 bridge starts. From your training app on a separate device, pair to
 **"IC Bike (corrected)"** as a power meter and as an FTMS bike.
 
-If your numbers feel off, open Settings → **Auto-calibrate** to fit
-your bike's drivetrain drag (5–10 minutes, on-device). If you have
-an external power meter, use the **Power scale** slider on the same
-screen to pin the absolute scale. Default is 100%.
+If your warm-up power feels off, open Settings → **Auto-calibrate**
+to refit residual drivetrain drag (5–10 minutes, on-device). For
+absolute scale across the full R range, use the **Power scale**
+slider against an external power meter. Default is 100%.
 
 ## Limitations
 
@@ -114,13 +109,7 @@ Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - \tau_c - I\,\beta\,\o
 
 The H-shape constants ($w, R_{h1}, p_1, R_{h2}, p_2$), $\kappa$, and $\tau_c$ entangle eddy-brake physics, the IC8 firmware's dial-to-magnet mapping, and bearing/belt friction, so they ship as fixed defaults. $\kappa$ in particular is pinned at the previous single-Hill optimum so that letting the H-shape stretch freely doesn't shrink $\kappa$ to keep $\alpha\kappa H^2$ matched in the linear regime — which would silently break the 1000 W anchor. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$; the per-bike $\beta$ silently absorbs any unit-to-unit drift in $\tau_c$ as a small bias (~5–10% of $\lambda$ at typical riding cadences). $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so per-bike $\alpha$ fitting just absorbs $I_{\text{crank}}$ deviations into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
 
-**Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a uniform 5 mm Al disc ($R = 23$ cm) with two lead weight-rings measured by ruler:
-
-- Disc ($\rho_{\text{Al}} = 2700$): 2.24 kg, $I = 0.059$ kg·m².
-- Ring A ($r$ from 14 to 18 cm, $h \approx 2.03$ cm, $\rho_{\text{Pb}} = 11{,}340$): 9.25 kg, $I = 0.241$ kg·m².
-- Ring B ($r$ from 13 to 17 cm, $h \approx 1.52$ cm, same density): 6.50 kg, $I = 0.149$ kg·m².
-
-Each belt has ~2-3 mm chamfered edges extending past the flat-top radii above (the chamfer cuts the corner, not all the way to zero thickness); the chamfer volume closes the 18 kg budget at flat-top $h$ comfortably within the ruler "less than" bounds, and the symmetric chamfers shift $I$ by <0.3% (below the flat-ring formula's precision). Lead is the only material consistent with the measured ring volumes and the 18 kg total: iron, brass, copper, and bismuth all need rings far thicker than the bounds allow (iron by 46%, brass 35%, copper 28%, bismuth 18%). With gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m².
+**Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a 5 mm Al disc ($R = 23$ cm, 2.24 kg) carrying two ruler-measured lead weight-rings (9.25 kg and 6.50 kg). The flat-ring moments sum to $I_{\text{flywheel}} = 0.449$ kg·m²; with gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m². Material identification (lead vs. iron/brass/copper/bismuth) and chamfer-volume bookkeeping are in the `Calibration` docstring (`bridge/lib/physics/calibration.dart`).
 
 Disc and ring geometry pin $I$ from physics; spin-downs pin the linear-regime damping $2\alpha\kappa H^2/I$, the H-shape, and both residual-drag terms; the 1000 W spec pins the remaining $\alpha/\kappa$ degree of freedom. The fit lands at RSS = 0.0209 across 51,792 samples — a 38% improvement over the earlier single-Hill calibration, which itself was 21% better than the viscous-only precursor.
 
@@ -130,13 +119,11 @@ The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ togethe
 
 ## Reality check: the model decomposes an acceleration cleanly
 
-A BLE-logged acceleration at $R = 25$. Cadence climbs from 24 to 118 rpm
-over ~10 seconds (briefly hitting the FTMS 125-rpm cap), then the
-rider stops pushing and the flywheel coasts back down to ~50 rpm:
+A BLE-logged acceleration at $R = 25$: cadence climbs from 24 to 118 rpm over ~10 seconds, then the rider stops pushing and the flywheel coasts back down.
 
 ![Indoor acceleration](docs/figures/indoor_surge.png)
 
-Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake).
+Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero.
 
 The same shape shows up on a 4iiii crank meter during an outdoor acceleration. Different sensor, different system, same physics:
 
