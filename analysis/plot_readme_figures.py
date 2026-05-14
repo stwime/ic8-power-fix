@@ -9,6 +9,10 @@ Figures regenerated:
                                     shipped powerScale default.
   docs/figures/indoor_surge.png   — R=25 acceleration from a BLE log,
                                     decomposed into steady + KE terms.
+  docs/figures/outdoor_surge.png  — end-of-ride acceleration on a 4iiii
+                                    crank meter (Lunch_Ride.fit @ ~6010 s),
+                                    showing the same ramp-and-ease shape
+                                    on a different sensor and system.
   docs/figures/spindown_fit.png   — representative ω(t) coastdowns at
                                     four R values, model overlay on
                                     every segment, showing the fit
@@ -32,6 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FIG_DIR = ROOT / "docs" / "figures"
 SPRINT_CSV = ROOT / "data/calibration/spin_downs_apr29.csv"
 ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
+OUTDOOR_FIT = ROOT / "data/outdoor/Lunch_Ride.fit"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 ALPHA = 165.0
@@ -200,6 +205,95 @@ def plot_indoor_surge():
     print(f"Wrote {out}")
 
 
+def _load_outdoor_window(fit_path: Path, t_center_s: float,
+                         pre_s: float, post_s: float):
+    """Return arrays (t_rel, power_w, cadence_rpm, speed_kmh) over a window
+    [t_center - pre, t_center + post] relative to the start of the .fit
+    file. Records with missing fields are skipped; missing seconds are
+    not interpolated."""
+    import fitparse
+    ff = fitparse.FitFile(str(fit_path))
+    t0 = None
+    t, pw, cd, sp = [], [], [], []
+    for r in ff.get_messages("record"):
+        d = {f.name: f.value for f in r}
+        ts = d.get("timestamp")
+        p = d.get("power")
+        c = d.get("cadence")
+        s = d.get("enhanced_speed") or d.get("speed")
+        if ts is None or p is None or c is None or s is None:
+            continue
+        if t0 is None:
+            t0 = ts
+        rel = (ts - t0).total_seconds()
+        if rel < t_center_s - pre_s or rel > t_center_s + post_s:
+            continue
+        t.append(rel - t_center_s)
+        pw.append(p)
+        cd.append(c)
+        sp.append(s * 3.6)  # m/s → km/h
+    return (np.asarray(t), np.asarray(pw, dtype=float),
+            np.asarray(cd, dtype=float), np.asarray(sp, dtype=float))
+
+
+def plot_outdoor_surge():
+    """End-of-ride acceleration on a 4iiii crank meter, ~25 s before the
+    .fit file ends. Cadence climbs from ~43 to ~76 rpm over ~18 s while
+    speed rises from ~18 to ~29 km/h, then the rider eases off and both
+    cadence and speed drop. Same ramp-and-ease shape as the indoor surge
+    on a different sensor and system. Power peak is at file_time 6024 s
+    in Lunch_Ride.fit; the window stops at +3 s to avoid bleeding into
+    the next push that starts ~4 s after the peak."""
+    if not OUTDOOR_FIT.exists():
+        print(f"skipping outdoor_surge.png — {OUTDOOR_FIT} missing")
+        return
+    t, pw, cd, sp = _load_outdoor_window(OUTDOOR_FIT, 6024.0, 18.0, 3.0)
+    if len(t) == 0:
+        print("skipping outdoor_surge.png — no records in window")
+        return
+
+    fig, axes = plt.subplots(2, 1, figsize=(8.5, 5.5),
+                             sharex=True,
+                             gridspec_kw={"height_ratios": [1, 2]})
+    ax_top, ax_pwr = axes
+    ax_top.plot(t, sp, "o-", color="#3b6fb1", lw=1.6, ms=4, label="speed")
+    ax_top.plot(t, cd, "s-", color="#9b6fbf", lw=1.6, ms=4, label="cadence")
+    ax_top.set_ylabel("speed (km/h) / cad (rpm)")
+    ax_top.grid(True, alpha=0.25)
+    ax_top.legend(loc="lower right", frameon=False)
+    ax_top.set_title("Outdoor acceleration (4iiii crank meter)",
+                     weight="bold")
+
+    # Acceleration zone runs to peak power (t = 0); coastdown follows.
+    ax_pwr.axvspan(t[0], 0.0, color="#3b6fb1", alpha=0.08)
+    ax_pwr.axvspan(0.0, t[-1], color="#cc4a4a", alpha=0.08)
+    ax_pwr.text(0.5 * (t[0] + 0.0), 20, "acceleration",
+                ha="center", va="bottom", color="#3b6fb1",
+                fontsize=10, style="italic")
+    ax_pwr.text(0.5 * (0.0 + t[-1]), 20, "coastdown",
+                ha="center", va="bottom", color="#cc4a4a",
+                fontsize=10, style="italic")
+
+    ax_pwr.bar(t, pw, width=1.0, color="#e89a4a", alpha=0.55,
+               label="P_4iiii (rider power)")
+    ax_pwr.plot(t, pw, "-", color="#cc4a4a", lw=1.8)
+    p_peak = pw.max()
+    ax_pwr.axhline(p_peak, ls=":", color="#444", lw=1.0)
+    ax_pwr.text(t[-1], p_peak, f"  peak {p_peak:.0f} W",
+                va="center", ha="left", color="#444", fontsize=9)
+    ax_pwr.set_xlabel("time (s, relative to peak power)")
+    ax_pwr.set_ylabel("power (W)")
+    ax_pwr.legend(loc="upper left", frameon=False)
+    ax_pwr.grid(True, alpha=0.25)
+    ax_pwr.set_ylim(0, max(p_peak * 1.1, 600))
+
+    fig.tight_layout()
+    out = FIG_DIR / "outdoor_surge.png"
+    fig.savefig(out, dpi=160)
+    plt.close(fig)
+    print(f"Wrote {out}")
+
+
 def _load_spindowns():
     """Return list of {R, occ, t, omega} dicts from all_spindowns.csv."""
     if not ALL_SPINDOWNS_CSV.exists():
@@ -313,4 +407,5 @@ def plot_spindown_fit():
 if __name__ == "__main__":
     plot_power_curves()
     plot_indoor_surge()
+    plot_outdoor_surge()
     plot_spindown_fit()
