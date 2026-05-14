@@ -138,6 +138,10 @@ rider stops pushing and the flywheel coasts back down to ~50 rpm:
 
 Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red area is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W on top of the ~300 W steady at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero (the rider has stopped pushing, the flywheel is bleeding off its kinetic energy into the brake).
 
+The same shape shows up on a 4iiii crank meter during an outdoor acceleration. Different sensor, different system, same physics:
+
+![Outdoor acceleration on a 4iiii crank meter](docs/figures/outdoor_surge.png)
+
 ## Repository layout
 
 ```
