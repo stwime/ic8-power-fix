@@ -41,9 +41,10 @@ OUTDOOR_FIT = ROOT / "data/outdoor/Lunch_Ride.fit"
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
 # α and κ stay at the spec-anchored values (165, 0.1585). I_crank
 # recalibrated from the 9.09 geometric value down to 7.55 (17% drop)
-# against the outdoor 4iiii crank meter; consistent with the geometric
-# derivation having ~9% uncertainty in the effective gear ratio and/or
-# ~10% uncertainty in the manufacturer's 18 kg flywheel mass. H-shape
+# against the outdoor 4iiii crank meter. With g measured exactly the
+# 17% gap lands entirely on the flywheel inertia — most plausibly
+# the rings sit below their ruler-derived upper bounds and the
+# flywheel mass is below the manufacturer's 18 kg spec. H-shape
 # params, β, τ_c come from the re-fit at I_crank=7.55.
 ALPHA = 165.0
 BETA = 0.0154

@@ -117,8 +117,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///      total steady-state output is P = I·λ_total(R)·ω² + τ_c·ω where
 ///      λ_total and τ_c come from the spin-down data, so I is the only
 ///      knob that lowers output without breaking the spin-down fit.
-///      The 17% reduction is within the geometric derivation's
-///      uncertainty band (gear-ratio ±9%, flywheel mass ±10%). See the
+///      With the gear ratio measured exactly, the 17% gap falls
+///      entirely on the flywheel inertia — most plausibly the rings
+///      sit below their ruler-derived upper bounds, putting the
+///      flywheel mass below the manufacturer's 18 kg spec. See the
 ///      comment block on [defaultICrank] below.
 ///
 /// [powerScale] is a coupled absolute-scale knob: it multiplies α and
@@ -151,11 +153,11 @@ class Calibration {
   // new I lands H, β, τ_c at the values below with RSS = 0.0188
   // (slightly better than the I=9.09 fit's 0.0209).
   //
-  // The 17% drop in I is within the geometric derivation's uncertainty:
-  // gear-ratio g could be ~4.10 instead of the assumed 4.5 (pulley
-  // diameters are hard to measure precisely; some belt slip is
-  // expected under load), or the 18 kg flywheel manufacturer spec
-  // could be off by ~10%, or some combination.
+  // g is measured exactly, so the 17% drop in I lands entirely on
+  // the flywheel inertia. Ring heights were ruler-measured upper
+  // bounds and the 18 kg flywheel spec is manufacturer-stated, not
+  // weighed — most plausibly the rings sit below those bounds and
+  // the actual flywheel mass is below 18 kg.
   //
   // Residual drag is split into Coulomb (τ_c, bearings + belt) and
   // viscous (β, windage); R=0 spin-downs alone prefer this split by

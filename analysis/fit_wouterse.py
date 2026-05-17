@@ -100,14 +100,13 @@ I_CRANK = 7.55  # kg·m² (effective, at the crank). Recalibrated against
                 # the adjustment, while lowering I lets H rescale to
                 # match the same measured decay (H drops ~sqrt(0.83)).
                 #
-                # The geometric derivation that lands at 9.09 (preserved
-                # below as a record) is flaky enough to support a ~17%
-                # walk-back: ring heights were ruler-measured upper
-                # bounds, the 18 kg flywheel spec is manufacturer-stated
-                # not weighed, and the g = 4.5 gear ratio is from pulley
-                # diameters that are hard to measure precisely. Any of
-                # those could plausibly drift down 5–10%, compounding to
-                # 18% via g² × I_flywheel.
+                # g is measured exactly, so the 17% gap lands entirely
+                # on I_flywheel. Ring heights are ruler-measured upper
+                # bounds and the 18 kg flywheel spec is manufacturer-
+                # stated, not weighed — most plausibly the rings sit
+                # below those bounds and the flywheel mass is below
+                # 18 kg. The geometric derivation that lands at 9.09 is
+                # preserved below as a record.
                 #
                 # Geometric derivation (gives 9.09, used as starting point):
                 # 18 kg total flywheel (manufacturer spec): a 5 mm uniform
