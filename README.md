@@ -21,7 +21,7 @@ There's no resistance control. The bike has a manual dial, so ERG mode isn't pos
 ## Why use this
 
 - **Right shape across the resistance range.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R.
-- **Honest power during transients.** Surging from 80 to 110 rpm spins up an 18 kg flywheel — an extra 100–150 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt`, so surges read at full value and coastdowns drop to zero on time.
+- **Honest power during transients.** Surging from 80 to 110 rpm spins up the flywheel — roughly 80–130 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt`, so surges read at full value and coastdowns drop to zero on time.
 - **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which sharpens the acceleration math during fast transients.
 - **Low-R drivetrain fine-tune.** Auto-calibrate (Settings → Auto-calibrate) refits the residual drivetrain drag from flywheel-decay curves — 5–10 minutes, on-device. It matters most at warm-up resistances; at race-pace R the eddy brake dominates. For absolute scale, use the Power scale slider against an external power meter.
 - **Standard FTMS out, no firmware mods.** The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works. The bike doesn't change.
@@ -46,19 +46,18 @@ flutter pub get
 flutter run --release            # connect a phone via USB first; --release so the app keeps running after you unplug
 ```
 
-In the app: if a Bluetooth icon appears in the top bar, tap it to
-grant permissions, then tap **Find bike**, tap your bike, and the
-bridge starts. From your training app on a separate device, pair to
-**"IC Bike (corrected)"** as a power meter and as an FTMS bike.
+In the app: tap the Bluetooth icon in the top bar to grant
+permissions if shown, then **Find bike** and tap your bike. From
+your training app on a separate device, pair to **"IC Bike
+(corrected)"** as both a power meter and an FTMS bike.
 
-If your warm-up power feels off, open Settings → **Auto-calibrate**
-to refit residual drivetrain drag (5–10 minutes, on-device). For
-absolute scale across the full R range, use the **Power scale**
-slider against an external power meter. Default is 100%.
+If warm-up power feels off, use Settings → **Auto-calibrate**
+(5–10 min, on-device). For absolute scale, tune **Power scale**
+against an external meter.
 
 ## Limitations
 
-- **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still be off by 10%. The Power scale slider absorbs that against an external power meter.
+- **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry plus an outdoor power-meter session for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still be off by 10%. The Power scale slider absorbs that against an external power meter.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
 - **Roll-off at the highest R values is theory, not data.** Our spin-downs sit mostly in the linear-damping regime where the brake is roughly linear in cadence. The saturating roll-off above that is pinned by classical eddy-brake theory (see "The fix" below) rather than fitted to our measurements.
 
@@ -97,37 +96,33 @@ At steady cadence the second term is zero. During an acceleration it adds the wo
 
 $$H(R) = w \cdot \frac{R^{p_1}}{R^{p_1} + R_{h1}^{p_1}} + (1-w) \cdot \frac{R^{p_2}}{R^{p_2} + R_{h2}^{p_2}}, \quad \tau_{\max}(R) = \alpha\,H(R), \quad \frac{1}{\omega_c(R)} = \kappa\,H(R)$$
 
-A single 2-param Hill over-brakes by 0.3–0.85 rad/s across $R = 22..44$ in the middle of the spin-down — the empirical $B^2(R)$ has a shoulder a single sigmoid can't bend to. Two Hills close that mid-band gap, dropping global RSS 38% over the single-Hill fit. The decomposition is empirical: the IC8 has two magnet pairs but both engage over the same $R$ range and already sum to a smooth ramp in the geometric $H_\mathrm{geom}$ (`analysis/physics_first_brake.py`, `analysis/fit_geom_hill.py`), so the second Hill captures structure plausibly from yoke flux saturation, anti-polar pair coupling, or $\sigma_\mathrm{Al}$ frequency dependence — but isn't a clean one-knob mapping to any of those.
+The two-Hill split is empirical — $B^2(R)$ has a mid-band shoulder that doesn't fit a single sigmoid, and the IC8's two magnet pairs engage across the same $R$ range, so the second Hill doesn't map cleanly to one of them. It likely traces to yoke flux saturation.
 
-Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - \tau_c - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down. Residual drag is split into a constant Coulomb term $\tau_c$ (bearings + belt + seal friction) and a linear viscous term $I\,\beta\,\omega$ (windage + air-film); isolating the $R=0$ spin-downs and fitting drag-shape alone, Coulomb + viscous beats viscous-only by roughly 15× in RSS, which matches physical expectation (bearings give approximately constant torque, not viscous). The 1 Hz BLE cadence is too coarse to fit a curve to during a fast decay, so $\omega(t)$ comes from 120 fps phone video of the cranks (46 segments spanning $R = 0$ to 93; `analysis/track_crank.py`, `analysis/fit_wouterse.py`):
+Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - \tau_c - I\,\beta\,\omega$ against $\omega(t)$ of every spin-down. Residual drag splits into a constant Coulomb term $\tau_c$ (bearings + belt + seal friction) and a viscous term $I\,\beta\,\omega$ (windage + air-film); $R=0$ spin-downs prefer that split over viscous-only by ~15× in RSS. $\omega(t)$ comes from 120 fps phone video (1 Hz BLE cadence is too coarse for a fast decay) across 46 segments spanning $R = 0$ to 93 (`analysis/track_crank.py`, `analysis/fit_wouterse.py`):
 
-- $\alpha = 165$ N·m, $\beta = 0.0157$ s⁻¹, $\tau_c = 1.36$ N·m, $\kappa = 0.1585$ s/rad.
-- $w = 0.447$; sharp Hill $R_{h1} = 57.6$, $p_1 = 2.30$; broad Hill $R_{h2} = 128$, $p_2 = 0.685$.
+- $\alpha = 165$ N·m, $\beta = 0.0154$ s⁻¹, $\tau_c = 1.15$ N·m, $\kappa = 0.1585$ s/rad.
+- $w = 0.599$; broad Hill $R_{h1} = 185.0$, $p_1 = 0.669$; sharp Hill $R_{h2} = 59.4$, $p_2 = 2.25$.
 - $\alpha/\kappa = 1041$ W, the strict-Wouterse asymptotic peak brake power. Within 4% of the manufacturer's 1000 W max-output spec.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
-The H-shape constants ($w, R_{h1}, p_1, R_{h2}, p_2$), $\kappa$, and $\tau_c$ entangle eddy-brake physics, the IC8 firmware's dial-to-magnet mapping, and bearing/belt friction, so they ship as fixed defaults. $\kappa$ in particular is pinned at the previous single-Hill optimum so that letting the H-shape stretch freely doesn't shrink $\kappa$ to keep $\alpha\kappa H^2$ matched in the linear regime — which would silently break the 1000 W anchor. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$; the per-bike $\beta$ silently absorbs any unit-to-unit drift in $\tau_c$ as a small bias (~5–10% of $\lambda$ at typical riding cadences). $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so per-bike $\alpha$ fitting just absorbs $I_{\text{crank}}$ deviations into a wrong $\alpha$. Absolute scale is the Power scale slider's job.
+The H-shape, $\kappa$, and $\tau_c$ ship as fixed defaults — they entangle brake physics, the firmware's dial-to-magnet mapping, and bearing/belt friction in ways spin-down data alone can't separate. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$. $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so absolute scale is the Power scale slider's job, not auto-calibrate's.
 
-**Inertia from flywheel geometry, no fitting.** The 18 kg flywheel is a 5 mm Al disc ($R = 23$ cm, 2.24 kg) carrying two ruler-measured lead weight-rings (9.25 kg and 6.50 kg). The flat-ring moments sum to $I_{\text{flywheel}} = 0.449$ kg·m²; with gear ratio $g = 4.5$, $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m². Material identification (lead vs. iron/brass/copper/bismuth) and chamfer-volume bookkeeping are in the `Calibration` docstring (`bridge/lib/physics/calibration.dart`).
+**Inertia: flywheel geometry, then a power-meter correction.** The flywheel is a 5 mm Al disc ($R = 23$ cm, 2.24 kg) carrying two ruler-measured lead weight-rings (9.25 kg and 6.50 kg), summing to the manufacturer's 18 kg spec. The flat-ring moments give $I_{\text{flywheel}} = 0.449$ kg·m²; with assumed gear ratio $g = 4.5$, the geometric prediction is $I_{\text{crank}} = g^2 \cdot I_{\text{flywheel}} = 9.09$ kg·m² (material identification and chamfer bookkeeping in `bridge/lib/physics/calibration.dart`).
 
-Disc and ring geometry pin $I$ from physics; spin-downs pin the linear-regime damping $2\alpha\kappa H^2/I$, the H-shape, and both residual-drag terms; the 1000 W spec pins the remaining $\alpha/\kappa$ degree of freedom. The fit lands at RSS = 0.0209 across 51,792 samples — a 38% improvement over the earlier single-Hill calibration, which itself was 21% better than the viscous-only precursor.
+That value over-read by ~17% against an outdoor 4iiii crank meter. $I_{\text{crank}}$ is the only knob that lowers absolute output without breaking the spin-down fit, so we dropped it to **$I_{\text{crank}} = 7.55$ kg·m²** and refit $\{H, \beta, \tau_c\}$ at the new $I$ (RSS = 0.0188 across 51,792 samples). The 17% drop sits within the geometric uncertainty: effective gear ratio could be ~4.10 instead of 4.5 (belt slip plus ruler-measured pulleys), or the 18 kg manufacturer spec is off by ~10%, or both. Spin-down data alone can't separate them.
 
-The 1000 W anchor is the soft one — it's a marketing/regulatory ceiling, not a measurement. A ±30% error in $\alpha$ distorts predicted power by a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion. An independent $\alpha$ — Hall-probe $B$ fed into the Wouterse linear-regime formula (`analysis/physics_first_brake.py`) — would close the gap; without it, ground-truth absolute scale at high R needs an external power-meter sweep across multiple R levels.
+The 1000 W anchor is the soft one — a marketing/regulatory ceiling, not a measurement. A ±30% error in $\alpha$ distorts predicted power a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion; ground-truth absolute scale at high R needs an external power-meter sweep across multiple R levels.
 
 The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term move in lockstep. Default 1.0; tune against an external power meter when one is available.
 
 ## Reality check: the model decomposes an acceleration cleanly
 
-A BLE-logged acceleration at $R = 25$: cadence climbs from 24 to 118 rpm over ~10 seconds, then the rider stops pushing and the flywheel coasts back down.
+A BLE-logged acceleration at $R = 25$: cadence climbs from 23 to 125 rpm over ~11 seconds, then the rider stops pushing and the flywheel coasts back down.
 
 ![Indoor acceleration](docs/figures/indoor_surge.png)
 
-Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red is the KE term $I\,\omega\,\dot\omega$. KE adds ~135 W at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero.
-
-The same shape shows up on a 4iiii crank meter during an outdoor acceleration. Different sensor, different system, same physics:
-
-![Outdoor acceleration on a 4iiii crank meter](docs/figures/outdoor_surge.png)
+Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red is the KE term $I\,\omega\,\dot\omega$. KE adds ~180 W at the peak of the ramp, then flips negative during the coastdown so total power drops to near zero.
 
 ## Repository layout
 
@@ -138,13 +133,8 @@ bridge/            Flutter app (the bridge itself)
                      (what Auto-calibrate runs on-device)
 analysis/          Calibration pipeline (Python): nRF Connect log → CSV
                    → video crank tracking → spin-down curation →
-                   strict-Wouterse ODE fit. Also ic8_logger.py for raw
-                   BLE capture, plot_readme_figures.py for the README
-                   figures, and physics_first_brake.py for an independent
-                   geometry-only sanity check (not on the calibration
-                   path). Each script documents its role in its top
-                   docstring. Install deps with
-                   `pip install -r analysis/requirements.txt`.
+                   strict-Wouterse ODE fit. Each script documents its
+                   role at the top; deps in `analysis/requirements.txt`.
 docs/figures/      README plots and the bridge data-flow diagram.
 ```
 
