@@ -39,16 +39,22 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUTDOOR_FIT = ROOT / "data/outdoor/Lunch_Ride.fit"
 
 # Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
+# α and κ stay at the spec-anchored values (165, 0.1585). I_crank
+# recalibrated from the 9.09 geometric value down to 7.55 (17% drop)
+# against the outdoor 4iiii crank meter; consistent with the geometric
+# derivation having ~9% uncertainty in the effective gear ratio and/or
+# ~10% uncertainty in the manufacturer's 18 kg flywheel mass. H-shape
+# params, β, τ_c come from the re-fit at I_crank=7.55.
 ALPHA = 165.0
-BETA = 0.0157
-TAU_C = 1.3582
-W_MIX = 0.4467
-RH1 = 57.616
-P1 = 2.297
-RH2 = 128.452
-P2 = 0.685
+BETA = 0.0154
+TAU_C = 1.1468
+W_MIX = 0.5994
+RH1 = 185.036
+P1 = 0.669
+RH2 = 59.372
+P2 = 2.246
 KAPPA = 0.1585
-I_CRANK = 9.09
+I_CRANK = 7.55
 POWER_SCALE = 1.00
 
 # IC8's own broadcast formula (firmware fit). See README "Why the bike's

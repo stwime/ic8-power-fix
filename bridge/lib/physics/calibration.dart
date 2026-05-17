@@ -96,27 +96,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///        I_flywheel                       = 0.4488 kg·m²
 ///        I_crank   = g²·I_flywheel = 9.09 kg·m²   (g = 4.5)
 ///
-///   2. [defaultAlpha] from the manufacturer's 1000 W max-output spec.
-///      Under strict Wouterse, the asymptotic peak brake power at any
-///      single ω is α/κ. With α = 165 N·m the fit lands κ = 0.1585 and
-///      α/κ = 1041 W — matching the 1000 W rating to ~4%. The saturation
-///      bell-curve isn't directly observed in our coastdowns (which sit
-///      in the linear-damping regime ω << ω_c), but it's a real physical
-///      constraint of permanent-magnet eddy brakes — finite magnetic
-///      flux through the disc bounds the peak absorbable power. The
-///      marketing spec is our anchor for where that ceiling sits.
+///   2. [defaultAlpha] pinned to the manufacturer's 1000 W max-output
+///      spec. Under strict Wouterse, the asymptotic peak brake power at
+///      any single ω is α/κ. With α = 165 N·m the fit lands κ = 0.1585
+///      and α/κ = 1041 W — matching the 1000 W rating to ~4%. The
+///      saturation bell-curve isn't directly observed in our coastdowns
+///      (which sit in the linear-damping regime ω << ω_c), but it's a
+///      real physical constraint of permanent-magnet eddy brakes — finite
+///      magnetic flux through the disc bounds the peak absorbable power.
+///      The marketing spec is the anchor for where that ceiling sits.
 ///
 ///   3. H(R) shape ({w, R_h1, p1, R_h2, p2}), β, and τ_c from a global
-///      fit on 46 video-tracked spindowns spanning R = 0 to 93. κ pinned
-///      at the previous single-Hill optimum (0.1585) so the 1000 W anchor
-///      stays meaningful when H(R) is free. RSS = 0.0209 across 51,792
-///      samples — a 38% RSS improvement over the previous single-Hill
-///      calibration (which itself was 21% better than the viscous-only
-///      precursor).
+///      fit on 46 video-tracked spindowns spanning R = 0 to 93, with α
+///      and κ pinned to the 1041 W anchor and I_crank pinned to the
+///      recalibrated value (see [defaultICrank] below). RSS = 0.0188
+///      across 51,792 samples.
 ///
-/// All three are mutually consistent — the data, the geometry, and the
-/// marketing spec land on the same calibration without invoking
-/// perceived effort anywhere.
+///   4. [defaultICrank] recalibrated from the 9.09 geometric value down
+///      to 7.55 against the outdoor 4iiii crank meter. The bridge's
+///      total steady-state output is P = I·λ_total(R)·ω² + τ_c·ω where
+///      λ_total and τ_c come from the spin-down data, so I is the only
+///      knob that lowers output without breaking the spin-down fit.
+///      The 17% reduction is within the geometric derivation's
+///      uncertainty band (gear-ratio ±9%, flywheel mass ±10%). See the
+///      comment block on [defaultICrank] below.
 ///
 /// [powerScale] is a coupled absolute-scale knob: it multiplies α and
 /// I_crank by the same factor, so the eddy steady term, the residual
@@ -132,27 +135,44 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  // α pinned to 165 (anchored to 1000 W marketing max via α/κ = 1041 W).
-  // κ pinned to 0.1585 (previous single-Hill optimum) so the 1000 W
-  // anchor stays meaningful when the H(R) shape is free.
-  // I_crank pinned to 9.09 (anchored to flywheel geometry: 18 kg with
-  // a 5 mm uniform Al disc + lead weight-rings on both faces, side A
-  // at r = 14–18 cm and side B at r = 13–17 cm). Residual drag is split
-  // into Coulomb (τ_c, bearings + belt) and viscous (β, windage); R=0
-  // spin-downs alone prefer this split by ~15× in RSS over viscous-only.
-  // H(R) is a sum of two Hill curves; the single-Hill fit over-braked
-  // by 0.3–0.85 rad/s across R = 22..44, two Hills close that gap at
-  // a 38% RSS improvement.
-  static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0157;     // 1/s — viscous residual drag
-  static const double defaultTauC = 1.3582;     // N·m — Coulomb residual drag
-  static const double defaultW = 0.4467;        // mix weight on sharp Hill
-  static const double defaultRh1 = 57.616;      // sharp Hill midpoint
-  static const double defaultP1 = 2.297;        // sharp Hill sharpness
-  static const double defaultRh2 = 128.452;     // broad Hill midpoint
-  static const double defaultP2 = 0.685;        // broad Hill sharpness
-  static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation
-  static const double defaultICrank = 9.09;     // kg·m² (effective, at crank)
+  //
+  // α = 165 and κ = 0.1585 pinned to anchor α/κ ≈ 1041 W against the
+  // 1000 W marketing max-output spec; the saturation bell-curve isn't
+  // directly observed in the linear-regime coastdowns so this anchor
+  // sets where the ceiling sits.
+  //
+  // I_crank lowered from the 9.09 geometric value to 7.55 against the
+  // outdoor 4iiii L-only crank meter (Lunch_Ride.fit May 2026,
+  // Lunch_Ride_harder_effort.fit Sept 2025), dropping total bridge
+  // output by ~17%. The bridge's steady-state output is
+  // P = I·λ_total(R)·ω² + τ_c·ω where λ_total(R) and τ_c are measured
+  // directly from spin-downs, so I is the only knob that lowers output
+  // without invalidating the fit. Re-running fit_wouterse.py at the
+  // new I lands H, β, τ_c at the values below with RSS = 0.0188
+  // (slightly better than the I=9.09 fit's 0.0209).
+  //
+  // The 17% drop in I is within the geometric derivation's uncertainty:
+  // gear-ratio g could be ~4.10 instead of the assumed 4.5 (pulley
+  // diameters are hard to measure precisely; some belt slip is
+  // expected under load), or the 18 kg flywheel manufacturer spec
+  // could be off by ~10%, or some combination.
+  //
+  // Residual drag is split into Coulomb (τ_c, bearings + belt) and
+  // viscous (β, windage); R=0 spin-downs alone prefer this split by
+  // ~15× in RSS over viscous-only. H(R) is a sum of two Hill curves;
+  // the optimizer found a different basin from the v9 fit (R_h1 and
+  // R_h2 swapped roles — broad Hill is now H1) but produces the same
+  // H(R) function shape under the relabeling.
+  static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude (1000 W spec anchor)
+  static const double defaultBeta = 0.0154;     // 1/s — viscous residual drag
+  static const double defaultTauC = 1.1468;     // N·m — Coulomb residual drag
+  static const double defaultW = 0.5994;        // mix weight on H1 (broad)
+  static const double defaultRh1 = 185.036;     // broad Hill midpoint
+  static const double defaultP1 = 0.669;        // broad Hill sharpness
+  static const double defaultRh2 = 59.372;      // sharp Hill midpoint
+  static const double defaultP2 = 2.246;        // sharp Hill sharpness
+  static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation (1000 W spec anchor)
+  static const double defaultICrank = 7.55;     // kg·m² (recalibrated from 9.09 geometric)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
@@ -171,9 +191,19 @@ class Calibration {
   // was over-compensating for. Global RSS drops 38% (0.0337 → 0.0209).
   // Loading v8 β under v9 defaults would over-damp by ~30% at low
   // ω — wipe and reset.
-  static const String _keyAlpha = 'cal.alpha.v9';
-  static const String _keyBeta = 'cal.betaW.v9';
-  static const String _keyICrank = 'cal.iCrank.v9';
+  //
+  // v10 keeps α and κ at the v9 spec-anchor values (165, 0.1585) but
+  // lowers I_crank from 9.09 to 7.55 after external recalibration
+  // against the outdoor 4iiii meter, dropping total bridge output by
+  // ~17%. H, β, τ_c are re-fit at the new I (still matching the
+  // spin-down data — RSS even improves slightly). Old saved I_crank
+  // from v9 (9.09) would over-read by ~17%, and the v9 H, β, τ_c are
+  // tied to that I, so all four keys are bumped to invalidate stored
+  // v9 values. powerScale key stays at v9 since its default (1.00)
+  // is unchanged.
+  static const String _keyAlpha = 'cal.alpha.v10';
+  static const String _keyBeta = 'cal.betaW.v10';
+  static const String _keyICrank = 'cal.iCrank.v10';
   static const String _keyPowerScale = 'cal.powerScale.v9';
 
   double alpha;

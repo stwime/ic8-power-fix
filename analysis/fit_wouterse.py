@@ -84,11 +84,36 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 9.09  # kg·m² (effective, at the crank). Derived from geometry,
-                # not fit. 18 kg total flywheel (manufacturer spec): a 5 mm
-                # uniform Al disc plus two lead weight-rings, one on each
-                # face. Disc radius R = 0.23 m (46 cm OD); rings measured
-                # by ruler against the outer edge:
+I_CRANK = 7.55  # kg·m² (effective, at the crank). Recalibrated against
+                # the outdoor 4iiii crank meter. The geometric derivation
+                # below lands at 9.09; we lower I to 7.55 (17% reduction)
+                # so the bridge's total steady-state output drops ~17% to
+                # match the outdoor PM on Lunch_Ride.fit (May 2026) and
+                # Lunch_Ride_harder_effort.fit (Sept 2025). Bridge output
+                # at fixed (R, ω) scales linearly with I, since
+                # P = I·λ_total(R)·ω² + τ_c·ω and τ_c also scales with I
+                # via the R=0 fit constraint τ_c/I = const.
+                #
+                # This is the only knob that preserves the spin-down fit:
+                # the data constrains λ_total(R) directly, so any
+                # adjustment to α, κ, or H breaks the fit by the size of
+                # the adjustment, while lowering I lets H rescale to
+                # match the same measured decay (H drops ~sqrt(0.83)).
+                #
+                # The geometric derivation that lands at 9.09 (preserved
+                # below as a record) is flaky enough to support a ~17%
+                # walk-back: ring heights were ruler-measured upper
+                # bounds, the 18 kg flywheel spec is manufacturer-stated
+                # not weighed, and the g = 4.5 gear ratio is from pulley
+                # diameters that are hard to measure precisely. Any of
+                # those could plausibly drift down 5–10%, compounding to
+                # 18% via g² × I_flywheel.
+                #
+                # Geometric derivation (gives 9.09, used as starting point):
+                # 18 kg total flywheel (manufacturer spec): a 5 mm uniform
+                # Al disc plus two lead weight-rings, one on each face.
+                # Disc radius R = 0.23 m (46 cm OD); rings measured by
+                # ruler against the outer edge:
                 #   Disc:   π·R²·t·ρ_Al = π·(0.23)²·0.005·2700 = 2.24 kg
                 #   Ring A: r = 14–18 cm, h ≤ 2.0 cm  (4 cm wide)
                 #   Ring B: r = 13–17 cm, h ≤ 1.5 cm  (4 cm wide)
@@ -107,7 +132,8 @@ I_CRANK = 9.09  # kg·m² (effective, at the crank). Derived from geometry,
                 #   I_ring_A  = m·(r_in² + r_out²)/2 = 0.2405 kg·m²
                 #   I_ring_B  = m·(r_in² + r_out²)/2 = 0.1490 kg·m²
                 #   I_flywheel                       = 0.4488 kg·m²
-                #   I_crank   = g²·I_flywheel = 9.09 kg·m²   (g = 4.5)
+                #   I_crank_geometric = g²·I_flywheel = 9.09 kg·m² (g=4.5)
+                # Effective recalibrated I_crank: 7.55 kg·m² (used).
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the H(R) shape — α and κ slide along a degenerate ridge unless
@@ -119,18 +145,13 @@ I_CRANK = 9.09  # kg·m² (effective, at the crank). Derived from geometry,
 # (α/κ → ∞, model degenerates into power-law). α has to be set by an
 # external prior.
 #
-# α = 165 N·m anchors α/κ ≈ 1000 W, matching the manufacturer's max-
-# output spec. This anchors absolute scale without invoking perceived
-# effort, and keeps the asymptotic saturation ceiling at a defensible,
-# specification-grounded number.
-#
-# κ is also pinned (KAPPA_PINNED below) so the 1000 W anchor stays
-# meaningful: with five H-shape knobs the optimizer would otherwise
-# shrink κ to keep ακH²·ω matched in the linear regime, since H_max
-# is unconstrained by the data. Pinning κ at the previous single-Hill
-# optimum (0.1585) preserves α/κ = 1041 W and forces all the model
-# flexibility into the H(R) shape, which is where the structural
-# mid-band sag actually lives.
+# Pin: α = 165 N·m, κ = 0.1585 s/rad, anchoring α/κ ≈ 1041 W against the
+# 1000 W manufacturer max-output spec. Both held at the spec anchor; the
+# absolute-scale recalibration against the outdoor 4iiii crank meter is
+# absorbed into I_CRANK (lowered from the 9.09 geometric value to 7.55,
+# see the I_CRANK comment below). This preserves the spin-down fit
+# integrity — λ_total(R) is measured directly from the data and the
+# optimizer rescales H(R) to keep 2ακH²/I matched at the new I.
 #
 # See analysis/physics_first_brake.py for the brake-geometry derivation
 # and analysis/fit_h_alternatives.py for the comparison that picked
