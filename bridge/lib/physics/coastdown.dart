@@ -231,11 +231,11 @@ List<CoastdownSample> _trimLeading(
 /// keep ≥ minSamples=4 in the fit) — they are dominated by the
 /// rider-feet-still-touching transient.
 ///
-/// Note: this no longer gates on r². The earlier r²≥0.95 cutoff was circular —
-/// r² of a log-linear fit measures how exponential the decay is, which is
-/// exactly the modelling assumption being tested. Filtering on it censors
-/// the data that would falsify the model. r² is still surfaced on each
-/// emitted [CoastdownPoint] for the UI to label fit quality.
+/// Does not gate on r². r² of a log-linear fit measures how exponential
+/// the decay is, which is exactly the modelling assumption being tested
+/// — filtering on it would censor the data that could falsify the model.
+/// r² is still surfaced on each emitted [CoastdownPoint] for the UI to
+/// label fit quality.
 List<CoastdownPoint> extractCoastdownPoints(
   List<CoastdownSample> rows, {
   int leadingTrim = 1,

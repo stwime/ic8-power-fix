@@ -84,55 +84,14 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 7.55  # kg·m² (effective, at the crank). Recalibrated against
-                # the outdoor 4iiii crank meter. The geometric derivation
-                # below lands at 9.09; we lower I to 7.55 (17% reduction)
-                # so the bridge's total steady-state output drops ~17% to
-                # match the outdoor PM on Lunch_Ride.fit (May 2026) and
-                # Lunch_Ride_harder_effort.fit (Sept 2025). Bridge output
-                # at fixed (R, ω) scales linearly with I, since
-                # P = I·λ_total(R)·ω² + τ_c·ω and τ_c also scales with I
-                # via the R=0 fit constraint τ_c/I = const.
-                #
-                # This is the only knob that preserves the spin-down fit:
-                # the data constrains λ_total(R) directly, so any
-                # adjustment to α, κ, or H breaks the fit by the size of
-                # the adjustment, while lowering I lets H rescale to
-                # match the same measured decay (H drops ~sqrt(0.83)).
-                #
-                # g is measured exactly, so the 17% gap lands entirely
-                # on I_flywheel. Ring heights are ruler-measured upper
-                # bounds and the 18 kg flywheel spec is manufacturer-
-                # stated, not weighed — most plausibly the rings sit
-                # below those bounds and the flywheel mass is below
-                # 18 kg. The geometric derivation that lands at 9.09 is
-                # preserved below as a record.
-                #
-                # Geometric derivation (gives 9.09, used as starting point):
-                # 18 kg total flywheel (manufacturer spec): a 5 mm uniform
-                # Al disc plus two lead weight-rings, one on each face.
-                # Disc radius R = 0.23 m (46 cm OD); rings measured by
-                # ruler against the outer edge:
-                #   Disc:   π·R²·t·ρ_Al = π·(0.23)²·0.005·2700 = 2.24 kg
-                #   Ring A: r = 14–18 cm, h ≤ 2.0 cm  (4 cm wide)
-                #   Ring B: r = 13–17 cm, h ≤ 1.5 cm  (4 cm wide)
-                # Both rings have ~2-3 mm chamfered edges extending
-                # past the flat-top radii (chamfer cuts the corner,
-                # not all the way to zero thickness); the chamfer
-                # volume closes the 18 kg budget at flat-top h
-                # comfortably within the bounds → m_A = 9.25 kg,
-                # m_B = 6.50 kg at ρ_Pb = 11340 kg/m³. Symmetric
-                # chamfers shift I by <0.3%, below the flat-ring
-                # formula's precision. Iron would need rings 46% over
-                # the bounds, brass 35%, copper 28%, bismuth 18% —
-                # all ruled out. Lead is the only material consistent
-                # with the ring volumes and the 18 kg flywheel total.
-                #   I_disc    = ½·m·R²              = 0.0594 kg·m²
-                #   I_ring_A  = m·(r_in² + r_out²)/2 = 0.2405 kg·m²
-                #   I_ring_B  = m·(r_in² + r_out²)/2 = 0.1490 kg·m²
-                #   I_flywheel                       = 0.4488 kg·m²
-                #   I_crank_geometric = g²·I_flywheel = 9.09 kg·m² (g=4.5)
-                # Effective recalibrated I_crank: 7.55 kg·m² (used).
+I_CRANK = 7.55  # kg·m² (effective, at the crank). Pinned against the
+                # outdoor 4iiii crank meter (Lunch_Ride.fit, May 2026;
+                # Lunch_Ride_harder_effort.fit, Sept 2025). I is the
+                # only knob in P = I·λ_total(R)·ω² + τ_c·ω that sets
+                # absolute output without invalidating the spin-down
+                # fit: λ_total(R) is fit directly from the data, so
+                # any adjustment to α, κ, or H breaks the fit by the
+                # size of the adjustment.
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the H(R) shape — α and κ slide along a degenerate ridge unless
