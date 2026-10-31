@@ -46,10 +46,19 @@ flutter pub get
 flutter run --release            # connect a phone via USB first; --release so the app keeps running after you unplug
 ```
 
-In the app: tap the Bluetooth icon in the top bar to grant
-permissions if shown, then **Find bike** and tap your bike. From
-your training app on a separate device, pair to **"IC Bike
-(corrected)"** as both a power meter and an FTMS bike.
+The app starts advertising **"IC Bike (corrected)"** as soon as
+Bluetooth is on; the tile under the status line says whether it is
+visible and how many apps have paired. Pair your training app (on a
+separate device) to it as a power meter or FTMS bike at any time,
+then tap **Find bike** and pick your IC8. Keep IC Bridge in the
+foreground: iOS strips the name and service list from a backgrounded
+app's advertisement, and most training apps then stop seeing it.
+
+The Darwin half of the `bluetooth_low_energy` plugin is vendored in
+`bridge/packages/` with one patch: it advertises 16-bit Bluetooth SIG
+UUIDs as 16-bit (upstream issue #137). Unpatched, FTMS and Cycling
+Power don't fit the 31-byte advertisement and iOS moves them to the
+overflow area that training apps don't scan.
 
 If warm-up power feels off, use Settings → **Auto-calibrate**
 (5–10 min, on-device). For absolute scale, tune **Power scale**
@@ -57,7 +66,7 @@ against an external meter.
 
 ## Limitations
 
-- **Absolute scale depends on your unit.** Spin-downs can't disentangle brake strength from flywheel inertia, so we pin both from the reference IC8 (geometry plus an outdoor power-meter session for inertia, the 1000 W max-output spec for brake strength). Another unit with different manufacturing tolerances could still be off by 10%. The Power scale slider absorbs that against an external power meter.
+- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides, which is a weak anchor; the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. Expect the output to be within roughly ±20% of true power and the error to vary with $R$. The only solid fix is one session with a pedal power meter on this bike (sweep $R$ 10 to 90 at three cadences), which also calibrates the Power scale slider. Another unit adds its own tolerance on top.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
 - **Roll-off at the highest R values is theory, not data.** Our spin-downs sit mostly in the linear-damping regime where the brake is roughly linear in cadence. The saturating roll-off above that is pinned by classical eddy-brake theory (see "The fix" below) rather than fitted to our measurements.
 
@@ -102,17 +111,17 @@ Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - \tau_c - I\,\beta\,\o
 
 - $\alpha = 165$ N·m, $\beta = 0.0154$ s⁻¹, $\tau_c = 1.15$ N·m, $\kappa = 0.1585$ s/rad.
 - $w = 0.599$; broad Hill $R_{h1} = 185.0$, $p_1 = 0.669$; sharp Hill $R_{h2} = 59.4$, $p_2 = 2.25$.
-- $\alpha/\kappa = 1041$ W, the strict-Wouterse asymptotic peak brake power. Within 4% of the manufacturer's 1000 W max-output spec.
+- $\alpha/\kappa = 1041$ W is the brake power at the critical speed $\omega_c$. At fixed $R$ the eddy power is $(\alpha/\kappa)\,2x^2/(1+x^2)$ with $x = \omega/\omega_c$, so the asymptote is $2\alpha/\kappa \approx 2080$ W. The pin was chosen as $\alpha/\kappa \approx 1000$ W; it is a prior, not a measurement, and the spin-downs never reach $\omega_c$ ($x \le 0.6$ in the data) so they cannot check it.
 
 ![Spin-down calibration](docs/figures/spindown_fit.png)
 
 The H-shape, $\kappa$, and $\tau_c$ ship as fixed defaults — they entangle brake physics, the firmware's dial-to-magnet mapping, and bearing/belt friction in ways spin-down data alone can't separate. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$. $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so absolute scale is the Power scale slider's job, not auto-calibrate's.
 
-**Inertia: geometric estimate, then a power-meter correction.** The flywheel is a 5 mm aluminum disc ($R = 23$ cm) carrying two dense weight-rings on its faces. From ruler-measured ring dimensions and the measured gear ratio $g = 4.5$, the geometric prediction is $I_{\text{crank}} \approx 9.09$ kg·m².
+**Inertia: geometric estimate, then an indirect correction.** The flywheel is a 5 mm aluminum disc ($R = 23$ cm) carrying two dense weight-rings on its faces. From ruler-measured ring dimensions and the ruler-measured belt ratio $g = 4.5$ (which enters as $g^2$), the geometric prediction is $I_{\text{crank}} \approx 9.09$ kg·m².
 
-That over-read by ~17% against an outdoor 4iiii crank meter. $I_{\text{crank}}$ is the only knob that lowers absolute output without breaking the spin-down fit, so we dropped it to **$I_{\text{crank}} = 7.55$ kg·m²** and refit $\{H, \beta, \tau_c\}$ at the new $I$ (RSS = 0.0188 across 51,792 samples). The PM session pins absolute scale; the geometric estimate just gave us a starting point.
+Indoor rides at that $I$ read about 17% higher than outdoor rides on a 4iiii crank meter at the same heart rate and cadence. That comparison goes through heart rate, so it is sensitive to heat, drift, and day-to-day form, and it is not a power-meter calibration of this bike. $I_{\text{crank}}$ is the only knob that lowers absolute output without breaking the spin-down fit, so it ships at **$I_{\text{crank}} = 7.55$ kg·m²** with $\{H, \beta, \tau_c\}$ refit at that $I$ (RSS = 0.0188 across 51,792 samples). Treat it as uncertain by tens of percent until a power meter is put on this bike. Owners of IC4/C6 units who did that report the bike's own number over-reads by 10 to 40%, growing with $R$, which is roughly where this model lands below $R \approx 50$ but not above.
 
-The 1000 W anchor is the soft one — a marketing/regulatory ceiling, not a measurement. A ±30% error in $\alpha$ distorts predicted power a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion; ground-truth absolute scale at high R needs an external power-meter sweep across multiple R levels.
+Both anchors are soft. A ±30% error in $\alpha$ distorts predicted power a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion. Ground truth needs a pedal power meter on this bike, swept across R at a few cadences; the spin-down work then only has to supply the transient (kinetic-energy) term.
 
 The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term move in lockstep. Default 1.0; tune against an external power meter when one is available.
 

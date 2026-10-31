@@ -84,14 +84,18 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 7.55  # kg·m² (effective, at the crank). Pinned against the
-                # outdoor 4iiii crank meter (Lunch_Ride.fit, May 2026;
-                # Lunch_Ride_harder_effort.fit, Sept 2025). I is the
-                # only knob in P = I·λ_total(R)·ω² + τ_c·ω that sets
-                # absolute output without invalidating the spin-down
-                # fit: λ_total(R) is fit directly from the data, so
-                # any adjustment to α, κ, or H breaks the fit by the
-                # size of the adjustment.
+I_CRANK = 7.55  # kg·m² (effective, at the crank). Geometric estimate
+                # 9.09 (ruler-measured rings, belt ratio 4.5 entering
+                # as g²), scaled by 0.83 so indoor rides match outdoor
+                # 4iiii rides at the same heart rate and cadence
+                # (Lunch_Ride.fit, May 2026; Lunch_Ride_harder_effort
+                # .fit, Sept 2025). That is HR matching, not a power-
+                # meter calibration of this bike: treat I as uncertain
+                # by tens of percent. I is the only knob in
+                # P = I·λ_total(R)·ω² + τ_c·ω that sets absolute output
+                # without invalidating the spin-down fit: λ_total(R) is
+                # fit directly from the data, so any adjustment to α,
+                # κ, or H breaks the fit by the size of the adjustment.
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the H(R) shape — α and κ slide along a degenerate ridge unless
@@ -103,11 +107,13 @@ I_CRANK = 7.55  # kg·m² (effective, at the crank). Pinned against the
 # (α/κ → ∞, model degenerates into power-law). α has to be set by an
 # external prior.
 #
-# Pin: α = 165 N·m, κ = 0.1585 s/rad, anchoring α/κ ≈ 1041 W against the
-# 1000 W manufacturer max-output spec. Both held at the spec anchor; the
-# absolute-scale recalibration against the outdoor 4iiii crank meter is
-# absorbed into I_CRANK (lowered from the 9.09 geometric value to 7.55,
-# see the I_CRANK comment below). This preserves the spin-down fit
+# Pin: α = 165 N·m, κ = 0.1585 s/rad, i.e. α/κ ≈ 1041 W. Note what that
+# number is: the eddy power at ω_c. At fixed R the power is
+# (α/κ)·2x²/(1+x²) with x = ω/ω_c, so the asymptote is 2α/κ ≈ 2080 W.
+# The 1000 W manufacturer spec was used as a loose prior for α/κ; it is
+# not a measurement and the coastdowns (x ≤ 0.6) cannot test it. The
+# absolute-scale adjustment is absorbed into I_CRANK (9.09 → 7.55, see
+# the I_CRANK comment above). This preserves the spin-down fit
 # integrity — λ_total(R) is measured directly from the data and the
 # optimizer rescales H(R) to keep 2ακH²/I matched at the new I.
 #

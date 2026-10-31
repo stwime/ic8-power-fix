@@ -63,20 +63,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// Anchoring chain — three independent inputs:
 ///
-///   1. [defaultICrank] = 7.55 kg·m², pinned against an outdoor 4iiii
-///      crank-meter session. The bridge's total steady-state output is
-///      P = I·λ_total(R)·ω² + τ_c·ω where λ_total and τ_c come from
-///      the spin-down data, so I is the only knob that sets absolute
-///      output without invalidating the fit.
+///   1. [defaultICrank] = 7.55 kg·m². Geometric estimate 9.09 (ruler-
+///      measured rings, belt ratio 4.5 entering as g²), lowered 17% so
+///      indoor rides match outdoor 4iiii rides at the same heart rate
+///      and cadence. That is an HR-matched comparison, not a power-meter
+///      calibration of this bike, so I is uncertain by tens of percent.
+///      The bridge's steady-state output is P = I·λ_total(R)·ω² + τ_c·ω
+///      with λ_total and τ_c from spin-downs, so I is the only knob
+///      that sets absolute output without invalidating the fit.
 ///
-///   2. [defaultAlpha] pinned to the manufacturer's 1000 W max-output
-///      spec. Under strict Wouterse, the asymptotic peak brake power at
-///      any single ω is α/κ. With α = 165 N·m the fit lands κ = 0.1585
-///      and α/κ = 1041 W — matching the 1000 W rating to ~4%. The
-///      saturation bell-curve isn't directly observed in our coastdowns
-///      (which sit in the linear-damping regime ω << ω_c), but finite
-///      magnetic flux through the disc bounds the peak absorbable power
-///      as a real physical constraint.
+///   2. [defaultAlpha] and [defaultKappa] pinned so α/κ ≈ 1041 W. Under
+///      strict Wouterse α/κ is the eddy power at ω_c; at fixed R the
+///      power is (α/κ)·2x²/(1+x²), x = ω/ω_c, so the asymptote is
+///      2α/κ ≈ 2080 W. The pin is a prior loosely taken from the 1000 W
+///      spec, not a measurement: the coastdowns sit at x ≤ 0.6 and never
+///      show the roll-off, so the data cannot check κ.
 ///
 ///   3. H(R) shape ({w, R_h1, p1, R_h2, p2}), β, and τ_c from a global
 ///      fit on 46 video-tracked spindowns spanning R = 0 to 93, with α
@@ -98,20 +99,20 @@ class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
   //
-  // α = 165 and κ = 0.1585 anchor α/κ ≈ 1041 W against the 1000 W
-  // marketing max-output spec; the saturation bell-curve isn't
-  // directly observed in the linear-regime coastdowns, so this anchor
-  // sets where the ceiling sits. I_crank = 7.55 is pinned by the
-  // outdoor 4iiii crank meter (Lunch_Ride.fit May 2026,
-  // Lunch_Ride_harder_effort.fit Sept 2025); it's the only knob in
-  // P = I·λ_total(R)·ω² + τ_c·ω that sets absolute output without
-  // invalidating the spin-down fit. H, β, τ_c are fit globally at
-  // those pinned α, κ, I — RSS = 0.0188 across 51,792 samples.
+  // α = 165 and κ = 0.1585 pin α/κ ≈ 1041 W (eddy power at ω_c; the
+  // asymptote is 2α/κ). The roll-off is never observed in the
+  // coastdowns, so this is a prior, not a fit. I_crank = 7.55 is the
+  // 9.09 geometric value scaled to match HR-matched outdoor rides on a
+  // 4iiii crank meter (Lunch_Ride.fit May 2026,
+  // Lunch_Ride_harder_effort.fit Sept 2025), which is a weak anchor;
+  // only a power meter on this bike can pin it. H, β, τ_c are fit
+  // globally at those pinned α, κ, I — RSS = 0.0188 across 51,792
+  // samples.
   //
   // Residual drag splits into Coulomb (τ_c, bearings + belt) and
   // viscous (β, windage); R=0 spin-downs prefer this split by ~15×
   // in RSS over viscous-only. H(R) is a sum of two Hill curves.
-  static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude (1000 W spec anchor)
+  static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude (α/κ ≈ 1041 W prior)
   static const double defaultBeta = 0.0154;     // 1/s — viscous residual drag
   static const double defaultTauC = 1.1468;     // N·m — Coulomb residual drag
   static const double defaultW = 0.5994;        // mix weight on H1 (broad)
@@ -119,8 +120,8 @@ class Calibration {
   static const double defaultP1 = 0.669;        // broad Hill sharpness
   static const double defaultRh2 = 59.372;      // sharp Hill midpoint
   static const double defaultP2 = 2.246;        // sharp Hill sharpness
-  static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation (1000 W spec anchor)
-  static const double defaultICrank = 7.55;     // kg·m² (outdoor-PM pinned)
+  static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation (α/κ prior, unobserved)
+  static const double defaultICrank = 7.55;     // kg·m² (geometric 9.09 × 0.83, HR-matched; soft)
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
