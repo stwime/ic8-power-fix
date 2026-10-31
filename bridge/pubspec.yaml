@@ -37,6 +37,15 @@ dependencies:
   shared_preferences: ^2.3.0
   app_settings: ^7.0.0
 
+# The Darwin backend of bluetooth_low_energy is vendored with one patch:
+# 16-bit Bluetooth SIG UUIDs are advertised as 16-bit instead of being
+# expanded to 128-bit (upstream issue #137). Without it the FTMS + Cycling
+# Power services and the name don't fit a 31-byte advertisement, and iOS
+# moves them to the overflow area that training apps don't scan.
+dependency_overrides:
+  bluetooth_low_energy_darwin:
+    path: packages/bluetooth_low_energy_darwin
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 
 import 'decode_ftms.dart';
 
@@ -63,7 +64,18 @@ class IC8Peripheral {
   late GATTCharacteristic _sensorLocationChar;
 
   bool _running = false;
+  bool get running => _running;
   Timer? _pacer;
+
+  /// Number of distinct centrals (training apps) currently subscribed to
+  /// Indoor Bike Data or Cycling Power Measurement. Surfaced in the UI so
+  /// the user can tell "advertising but nobody paired" from "paired".
+  final ValueNotifier<int> subscribers = ValueNotifier(0);
+
+  /// CoreBluetooth never calls back on addService/startAdvertising when
+  /// the manager isn't powered on; without a timeout the caller hangs
+  /// silently and the app shows nothing.
+  static const Duration _setupTimeout = Duration(seconds: 10);
 
   double _speedKmh = 0;
   double _cadenceRpm = 0;
@@ -151,9 +163,15 @@ class IC8Peripheral {
       ],
     );
 
-    await manager.removeAllServices();
-    await manager.addService(ftmsService);
-    await manager.addService(cpsService);
+    try {
+      await manager.removeAllServices().timeout(_setupTimeout);
+      await manager.addService(ftmsService).timeout(_setupTimeout);
+      await manager.addService(cpsService).timeout(_setupTimeout);
+    } catch (e) {
+      debugPrint('peripheral: GATT setup failed: $e');
+      try { await manager.removeAllServices(); } catch (_) {}
+      rethrow;
+    }
 
     _readReqSub = manager.characteristicReadRequested.listen((ev) async {
       final uuid = ev.characteristic.uuid;
@@ -194,6 +212,7 @@ class IC8Peripheral {
       } else if (ev.characteristic.uuid == _ftmsControlPointChar.uuid) {
         ev.state ? _subscribedFtmsCp.add(ev.central) : _subscribedFtmsCp.remove(ev.central);
       }
+      _updateSubscribers();
     });
 
     _writeReqSub = manager.characteristicWriteRequested.listen(_onWriteRequest);
@@ -205,23 +224,32 @@ class IC8Peripheral {
     // serviceData is non-empty (see advertisement.dart docs + darwin api.dart),
     // so we only set it on platforms where it's actually supported.
     final supportsServiceData = Platform.isAndroid || Platform.isWindows;
-    await manager.startAdvertising(Advertisement(
-      name: name,
-      serviceUUIDs: [
-        UUID.short(_kFtmsService),
-        UUID.short(_kCyclingPowerService),
-      ],
-      serviceData: supportsServiceData
-          ? {UUID.short(_kFtmsService): Uint8List.fromList([0x01, 0x20, 0x00])}
-          : const {},
-      manufacturerSpecificData: const [],
-    ));
+    try {
+      await manager.startAdvertising(Advertisement(
+        name: name,
+        serviceUUIDs: [
+          UUID.short(_kFtmsService),
+          UUID.short(_kCyclingPowerService),
+        ],
+        serviceData: supportsServiceData
+            ? {UUID.short(_kFtmsService): Uint8List.fromList([0x01, 0x20, 0x00])}
+            : const {},
+        manufacturerSpecificData: const [],
+      )).timeout(_setupTimeout);
+    } catch (e) {
+      debugPrint('peripheral: startAdvertising failed: $e');
+      await _teardown(advertising: false);
+      rethrow;
+    }
+    debugPrint('peripheral: advertising as "$name" (FTMS + CPS)');
 
     _pacer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     _running = true;
   }
 
-  Future<void> stop() async {
+  Future<void> stop() => _teardown(advertising: _running);
+
+  Future<void> _teardown({required bool advertising}) async {
     _pacer?.cancel();
     _pacer = null;
     await _readReqSub?.cancel();
@@ -230,13 +258,34 @@ class IC8Peripheral {
     _writeReqSub = null;
     await _notifyStateSub?.cancel();
     _notifyStateSub = null;
-    if (_running) await manager.stopAdvertising();
-    await manager.removeAllServices();
+    try {
+      if (advertising) await manager.stopAdvertising();
+    } catch (e) {
+      debugPrint('peripheral: stopAdvertising failed: $e');
+    }
+    try {
+      await manager.removeAllServices();
+    } catch (e) {
+      debugPrint('peripheral: removeAllServices failed: $e');
+    }
     _running = false;
     _subscribedFtms.clear();
     _subscribedCps.clear();
     _subscribedFtmsStatus.clear();
     _subscribedFtmsCp.clear();
+    _updateSubscribers();
+    _speedKmh = 0;
+    _cadenceRpm = 0;
+    _powerW = 0;
+  }
+
+  /// Bike went away: keep advertising so the training app stays paired,
+  /// but stop claiming power.
+  void clear() => update(speedKmh: 0, cadenceRpm: 0, powerW: 0);
+
+  void _updateSubscribers() {
+    final all = <Central>{..._subscribedFtms, ..._subscribedCps};
+    if (subscribers.value != all.length) subscribers.value = all.length;
   }
 
   /// FTMS Control Point: this is a mechanical-resistance bike, so we ack the
@@ -308,6 +357,7 @@ class IC8Peripheral {
       unawaited(
         manager.notifyCharacteristic(c, char, value: value).catchError((_) {
           subs.remove(c);
+          _updateSubscribers();
         }),
       );
     }

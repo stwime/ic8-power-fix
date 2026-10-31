@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:app_settings/app_settings.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
@@ -47,6 +48,14 @@ class _HomePageState extends State<HomePage> {
   BluetoothLowEnergyState _centralBleState = BluetoothLowEnergyState.unknown;
   BluetoothLowEnergyState _peripheralBleState = BluetoothLowEnergyState.unknown;
 
+  /// Virtual-bike advertising state. The peripheral is started as soon as
+  /// Bluetooth is on, independent of the IC8, so the training app can pair
+  /// with "IC Bike (corrected)" before (or without) the bike being found.
+  bool _broadcasting = false;
+  bool _broadcastStarting = false;
+  String? _broadcastError;
+  String? _advertisedName;
+
   @override
   void initState() {
     super.initState();
@@ -59,8 +68,17 @@ class _HomePageState extends State<HomePage> {
       if (mounted) setState(() => _centralBleState = ev.state);
     });
     _peripheralStateSub = PeripheralManager().stateChanged.listen((ev) {
-      if (mounted) setState(() => _peripheralBleState = ev.state);
+      if (!mounted) return;
+      setState(() => _peripheralBleState = ev.state);
+      if (ev.state == BluetoothLowEnergyState.poweredOn) {
+        _ensureBroadcast();
+      } else if (_broadcasting) {
+        // The OS already tore the advertisement down; reflect that.
+        _broadcasting = false;
+        unawaited(_peripheral.stop());
+      }
     });
+    _ensureBroadcast();
 
     _sampleSub = _central.samples.listen((s) {
       final pwr = (s.correctedW ?? 0).round();
@@ -81,7 +99,9 @@ class _HomePageState extends State<HomePage> {
             _status = 'Connecting…';
             _tone = _StatusTone.working;
           case BridgeConnState.connected:
-            _status = 'Sending power to your training app';
+            _status = _broadcasting
+                ? 'Sending power to your training app'
+                : 'Bike connected';
             _tone = _StatusTone.connected;
           case BridgeConnState.reconnecting:
             _status = 'Connection lost, reconnecting…';
@@ -94,6 +114,43 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// Start (or restart) the virtual bike. Safe to call repeatedly; no-op
+  /// unless the peripheral side is powered on and not already running.
+  Future<void> _ensureBroadcast() async {
+    if (_broadcastStarting || _peripheral.running) return;
+    if (_peripheralBleState != BluetoothLowEnergyState.poweredOn) return;
+    final name = widget.prefs.proxyName;
+    setState(() {
+      _broadcastStarting = true;
+      _broadcastError = null;
+    });
+    try {
+      await _peripheral.start(name: name);
+      if (!mounted) return;
+      setState(() {
+        _broadcasting = true;
+        _advertisedName = name;
+        if (_connected != null) _status = 'Sending power to your training app';
+      });
+    } catch (e, st) {
+      debugPrint('peripheral.start failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _broadcasting = false;
+        _broadcastError = '$e';
+      });
+    } finally {
+      if (mounted) setState(() => _broadcastStarting = false);
+    }
+  }
+
+  Future<void> _restartBroadcast() async {
+    await _peripheral.stop();
+    if (!mounted) return;
+    setState(() => _broadcasting = false);
+    await _ensureBroadcast();
+  }
+
   /// Open the right Settings page (or trigger first-launch authorize) for
   /// whichever BLE state the bridge is currently stuck in.
   Future<void> _openBleSettings() async {
@@ -104,13 +161,24 @@ class _HomePageState extends State<HomePage> {
     } else if (either(BluetoothLowEnergyState.poweredOff)) {
       await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
     } else if (either(BluetoothLowEnergyState.unknown)) {
-      // First run: authorize() actually triggers the OS prompt.
+      if (Platform.isIOS || Platform.isMacOS) {
+        // CoreBluetooth shows the permission prompt on its own when the
+        // managers are created; authorize() throws UnsupportedError here.
+        // "unknown" that persists means the prompt was dismissed, so the
+        // only way forward is the app's Settings page.
+        await AppSettings.openAppSettings();
+        return;
+      }
       setState(() {
         _status = 'Asking for Bluetooth permission…';
         _tone = _StatusTone.working;
       });
-      await CentralManager().authorize();
-      await PeripheralManager().authorize();
+      try {
+        await CentralManager().authorize();
+        await PeripheralManager().authorize();
+      } on UnsupportedError {
+        await AppSettings.openAppSettings();
+      }
     }
   }
 
@@ -195,23 +263,15 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     setState(() => _connected = p);
-    try {
-      await _peripheral.start(name: widget.prefs.proxyName);
-    } catch (e, st) {
-      // Bike is connected and producing samples; only the rebroadcast failed.
-      // Don't overwrite the "connected" status with a misleading error — but
-      // do log: silent failures here used to mask an iOS-only serviceData bug.
-      debugPrint('peripheral.start failed: $e\n$st');
-      setState(() {
-        _status = 'Connected, but rebroadcast did not start. '
-            'Training apps won\'t see corrected power — try reconnecting.';
-        _tone = _StatusTone.warning;
-      });
-    }
+    // Advertising normally started at launch; retry here in case it failed
+    // or Bluetooth came up late.
+    await _ensureBroadcast();
   }
 
   Future<void> _disconnect() async {
-    await _peripheral.stop();
+    // Keep advertising so the training app stays paired; just stop
+    // claiming power until a bike is connected again.
+    _peripheral.clear();
     await _central.disconnect();
     _connected = null;
     await WakelockPlus.disable();
@@ -227,6 +287,7 @@ class _HomePageState extends State<HomePage> {
     _found.dispose();
     _lastSample.dispose();
     WakelockPlus.disable();
+    _peripheral.stop();
     _central.dispose();
     super.dispose();
   }
@@ -321,8 +382,13 @@ class _HomePageState extends State<HomePage> {
               ),
             ));
             // Settings mutates Calibration in place; rebuild so any displayed
-            // derived value (e.g. proxyName future use) reflects the change.
-            if (mounted) setState(() {});
+            // derived value reflects the change. A renamed virtual bike
+            // needs a fresh advertisement.
+            if (!mounted) return;
+            setState(() {});
+            if (_broadcasting && widget.prefs.proxyName != _advertisedName) {
+              await _restartBroadcast();
+            }
           },
           icon: const Icon(Icons.settings_outlined),
           tooltip: 'Settings',
@@ -333,6 +399,15 @@ class _HomePageState extends State<HomePage> {
             Insets.lg, Insets.md, Insets.lg, Insets.lg),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _StatusPill(label: _status, tone: _tone),
+          const SizedBox(height: Insets.md),
+          _BroadcastTile(
+            name: widget.prefs.proxyName,
+            broadcasting: _broadcasting,
+            starting: _broadcastStarting,
+            error: _broadcastError,
+            subscribers: _peripheral.subscribers,
+            onRetry: _ensureBroadcast,
+          ),
           const SizedBox(height: Insets.md),
           if (ble != null) ...[
             _BleBanner(
@@ -388,6 +463,105 @@ class _PrimaryAction {
     required this.icon,
     required this.onPressed,
   });
+}
+
+/// What the training app sees. Separate from the bike status pill because
+/// the two halves of the bridge fail independently: the IC8 link can be
+/// fine while nothing is advertised, and vice versa.
+class _BroadcastTile extends StatelessWidget {
+  final String name;
+  final bool broadcasting;
+  final bool starting;
+  final String? error;
+  final ValueListenable<int> subscribers;
+  final VoidCallback onRetry;
+  const _BroadcastTile({
+    required this.name,
+    required this.broadcasting,
+    required this.starting,
+    required this.error,
+    required this.subscribers,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return ValueListenableBuilder<int>(
+      valueListenable: subscribers,
+      builder: (context, n, _) {
+        final (IconData icon, Color fg, String title, String detail) =
+            switch ((broadcasting, starting, error)) {
+          (true, _, _) => (
+              Icons.wifi_tethering,
+              cs.primary,
+              'Visible to training apps as “$name”',
+              n == 0
+                  ? 'No app paired yet. Pair it as a power meter or bike.'
+                  : n == 1
+                      ? '1 app receiving power'
+                      : '$n apps receiving power',
+            ),
+          (false, true, _) => (
+              Icons.wifi_tethering,
+              cs.onSurfaceVariant,
+              'Starting broadcast…',
+              '',
+            ),
+          (false, false, final String err) => (
+              Icons.wifi_tethering_error,
+              cs.error,
+              'Not visible to training apps',
+              'Broadcast failed: $err. Tap to retry.',
+            ),
+          _ => (
+              Icons.wifi_tethering_off,
+              cs.onSurfaceVariant,
+              'Not visible to training apps',
+              'Waiting for Bluetooth.',
+            ),
+        };
+        return Semantics(
+          liveRegion: true,
+          container: true,
+          child: InkWell(
+            onTap: broadcasting || starting ? null : onRetry,
+            borderRadius: BorderRadius.circular(Radii.tile),
+            child: Container(
+              padding: const EdgeInsets.all(Insets.md),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(Radii.tile),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(icon, color: fg),
+                const SizedBox(width: Insets.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: text.bodyMedium?.copyWith(
+                            color: cs.onSurface,
+                            fontWeight: FontWeight.w600,
+                          )),
+                      if (detail.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(detail,
+                            style: text.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant)),
+                      ],
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _BleBanner extends StatelessWidget {
