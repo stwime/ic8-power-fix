@@ -82,11 +82,12 @@ class Corrector {
       return null;
     }
 
-    final double pSteady = calibration.brakePowerAt(rSmooth, omega);
-    // KE uses effective I_crank so the powerScale slider scales the
-    // transient term by the same factor as the steady term — the whole
-    // output is linear in powerScale without any cadence/R distortion.
-    final double pKe = calibration.effectiveICrank * omega * omegaDot;
+    // Steady term: measured table when one is loaded, physics otherwise.
+    final double pSteady = calibration.steadyPowerAt(rSmooth, cadForPhysics);
+    // KE uses the same inertia as the steady source: effective I_crank on
+    // the physics path so the powerScale slider scales both terms
+    // together, the table's own I on the measured path.
+    final double pKe = calibration.keICrank * omega * omegaDot;
     final double pCorrected = math.max(0.0, pSteady + pKe);
 
     lastSteadyW = pSteady;

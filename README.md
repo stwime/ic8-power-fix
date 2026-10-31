@@ -61,12 +61,16 @@ Power don't fit the 31-byte advertisement and iOS moves them to the
 overflow area that training apps don't scan.
 
 If warm-up power feels off, use Settings → **Auto-calibrate**
-(5–10 min, on-device). For absolute scale, tune **Power scale**
-against an external meter.
+(5–10 min, on-device). For absolute scale, do one reference session
+([docs/reference-session.md](docs/reference-session.md)): a pedal
+power meter grid, or a falling-mass drop for the inertia. The session
+either sets **Power scale** or produces a measured P(R, cadence) table
+that you paste into Settings → **Measured power**, where it replaces
+the physics model.
 
 ## Limitations
 
-- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides, which is a weak anchor; the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. Expect the output to be within roughly ±20% of true power and the error to vary with $R$. The only solid fix is one session with a pedal power meter on this bike (sweep $R$ 10 to 90 at three cadences), which also calibrates the Power scale slider. Another unit adds its own tolerance on top.
+- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides, which is a weak anchor; the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. Expect the output to be within roughly ±20% of true power and the error to vary with $R$. The only solid fix is one reference session on this bike, described in [docs/reference-session.md](docs/reference-session.md): a pedal power meter swept over $R$ 10 to 90 at three cadences, which `analysis/fit_reference.py` turns into a measured power table the app can use in place of the model, or a falling-mass drop that pins the inertia. Another unit adds its own tolerance on top.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
 - **Roll-off at the highest R values is theory, not data.** Our spin-downs sit mostly in the linear-damping regime where the brake is roughly linear in cadence. The saturating roll-off above that is pinned by classical eddy-brake theory (see "The fix" below) rather than fitted to our measurements.
 
@@ -123,7 +127,7 @@ Indoor rides at that $I$ read about 17% higher than outdoor rides on a 4iiii cra
 
 Both anchors are soft. A ±30% error in $\alpha$ distorts predicted power a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion. Ground truth needs a pedal power meter on this bike, swept across R at a few cadences; the spin-down work then only has to supply the transient (kinetic-energy) term.
 
-The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term move in lockstep. Default 1.0; tune against an external power meter when one is available.
+The in-app **Power scale** slider scales $\alpha$ and $I_{\text{crank}}$ together, so steady-state, residual drag, and the KE term move in lockstep. Default 1.0; a reference session sets it. If that session shows the ratio to a power meter changing with $R$, the shape above is wrong for the bike and the app's **Measured power** table takes over: bilinear interpolation on the measured grid, with the acceleration term kept.
 
 ## Reality check: the model decomposes an acceleration cleanly
 
@@ -139,11 +143,16 @@ Blue area is the steady term $\tau_{\text{brake}}(R,\omega)\,\omega$, red is the
 bridge/            Flutter app (the bridge itself)
   lib/ble/           BLE central + peripheral
   lib/physics/       corrector + Wouterse coastdown fit
-                     (what Auto-calibrate runs on-device)
+                     (what Auto-calibrate runs on-device) + measured
+                     power table (power_table.dart)
 analysis/          Calibration pipeline (Python): nRF Connect log → CSV
                    → video crank tracking → spin-down curation →
-                   strict-Wouterse ODE fit. Each script documents its
-                   role at the top; deps in `analysis/requirements.txt`.
+                   strict-Wouterse ODE fit. fit_reference.py compares
+                   the model to a power meter and writes the table;
+                   falling_mass.py gets the inertia from a drop. Each
+                   script documents its role at the top; deps in
+                   `analysis/requirements.txt`.
+docs/              reference-session.md (how to anchor absolute power)
 docs/figures/      README plots and the bridge data-flow diagram.
 ```
 

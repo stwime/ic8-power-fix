@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'power_table.dart';
+
 /// Tunable physics constants — split from [Constants] so they can be edited at
 /// runtime via the settings screen and persisted across app launches.
 ///
@@ -137,17 +139,25 @@ class Calibration {
   static const String _keyBeta = 'cal.betaW.v10';
   static const String _keyICrank = 'cal.iCrank.v10';
   static const String _keyPowerScale = 'cal.powerScale.v9';
+  static const String _keyPowerTable = 'cal.powerTable.v1';
 
   double alpha;
   double beta;
   double iCrank;
   double powerScale;
 
+  /// Measured P(R, cadence) from a reference power meter on this bike.
+  /// When set, it replaces the physics model's steady term and
+  /// [powerScale] is not applied: the table is already in real watts.
+  /// See [PowerTable] and docs/reference-session.md.
+  PowerTable? powerTable;
+
   Calibration._({
     required this.alpha,
     required this.beta,
     required this.iCrank,
     required this.powerScale,
+    this.powerTable,
   });
 
   /// In-memory only, no persistence. For tests.
@@ -155,16 +165,53 @@ class Calibration {
       : alpha = defaultAlpha,
         beta = defaultBeta,
         iCrank = defaultICrank,
-        powerScale = defaultPowerScale;
+        powerScale = defaultPowerScale,
+        powerTable = null;
 
   static Future<Calibration> load() async {
     final prefs = await SharedPreferences.getInstance();
+    PowerTable? table;
+    final tableJson = prefs.getString(_keyPowerTable);
+    if (tableJson != null) {
+      try {
+        table = PowerTable.decode(tableJson, defaultICrank: defaultICrank);
+      } on FormatException {
+        // A table that no longer parses is worse than none: fall back to
+        // the physics model rather than failing at launch.
+        await prefs.remove(_keyPowerTable);
+      }
+    }
     return Calibration._(
       alpha: prefs.getDouble(_keyAlpha) ?? defaultAlpha,
       beta: prefs.getDouble(_keyBeta) ?? defaultBeta,
       iCrank: prefs.getDouble(_keyICrank) ?? defaultICrank,
       powerScale: prefs.getDouble(_keyPowerScale) ?? defaultPowerScale,
+      powerTable: table,
     );
+  }
+
+  /// True when a measured table drives the steady-state output.
+  bool get usesTable => powerTable != null;
+
+  /// Inertia for the acceleration term. The table carries its own value
+  /// (unscaled, measured watts); the physics path uses [effectiveICrank].
+  double get keICrank => powerTable?.iCrank ?? effectiveICrank;
+
+  /// Steady-state power in W from whichever source is active.
+  double steadyPowerAt(double r, double cadenceRpm) {
+    final table = powerTable;
+    if (table != null) return table.powerAt(r, cadenceRpm);
+    return brakePowerAt(r, cadenceRpm * math.pi / 30.0);
+  }
+
+  Future<void> setPowerTable(PowerTable? table) async {
+    powerTable = table;
+    final prefs = await SharedPreferences.getInstance();
+    if (table == null) {
+      await prefs.remove(_keyPowerTable);
+    } else {
+      await prefs.setString(_keyPowerTable, table.encode());
+    }
   }
 
   /// H(R) = w·R^p1/(R^p1 + R_h1^p1) + (1−w)·R^p2/(R^p2 + R_h2^p2).
@@ -259,11 +306,13 @@ class Calibration {
     beta = defaultBeta;
     iCrank = defaultICrank;
     powerScale = defaultPowerScale;
+    powerTable = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyAlpha);
     await prefs.remove(_keyBeta);
     await prefs.remove(_keyICrank);
     await prefs.remove(_keyPowerScale);
+    await prefs.remove(_keyPowerTable);
     // Drop any stored keys from prior calibration models so a future
     // Calibration.load() doesn't see orphan values.
     await prefs.remove('cal.alpha');
@@ -303,5 +352,6 @@ class Calibration {
       alpha == defaultAlpha &&
       beta == defaultBeta &&
       iCrank == defaultICrank &&
-      powerScale == defaultPowerScale;
+      powerScale == defaultPowerScale &&
+      powerTable == null;
 }

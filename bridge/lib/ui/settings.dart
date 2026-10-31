@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../ble/central.dart';
 import '../physics/calibration.dart';
+import '../physics/power_table.dart';
 import '../prefs.dart';
 import 'coastdown.dart';
 import 'tokens.dart';
@@ -128,6 +129,76 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() {});
   }
 
+  /// Paste the JSON written by analysis/fit_reference.py. A dialog instead
+  /// of a file picker: the table is a few hundred bytes and arrives by
+  /// AirDrop, Notes or mail, all of which end in the clipboard anyway.
+  Future<void> _pasteTable() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ctrl = TextEditingController();
+    String? error;
+    final table = await showDialog<PowerTable>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Paste measured power table'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'Paste the contents of power_table.json from '
+                  'fit_reference.py. It replaces the physics model with '
+                  'the watts measured on your bike.'),
+              const SizedBox(height: Insets.md),
+              TextField(
+                controller: ctrl,
+                maxLines: 6,
+                autofocus: true,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  hintText: '{"version": 1, "r": [...], ...}',
+                  errorText: error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                try {
+                  final t = PowerTable.decode(ctrl.text,
+                      defaultICrank: Calibration.defaultICrank);
+                  Navigator.pop(ctx, t);
+                } on FormatException catch (e) {
+                  setDialogState(() => error = e.message);
+                }
+              },
+              child: const Text('Use table'),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
+    if (table == null) return;
+    await widget.calibration.setPowerTable(table);
+    if (!mounted) return;
+    setState(() {});
+    messenger.showSnackBar(SnackBar(
+      content: Text('Using measured table (${table.cellCount} points)'),
+    ));
+  }
+
+  Future<void> _removeTable() async {
+    await widget.calibration.setPowerTable(null);
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Back to the physics model')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final cal = widget.calibration;
@@ -154,42 +225,60 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
 
           const SizedBox(height: Insets.xl),
-          _SectionHeader(
-            'Power scale',
-            trailing: cal.powerScale == Calibration.defaultPowerScale
-                ? null
-                : TextButton(
-                    onPressed: _resetPowerScale,
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: Insets.sm, vertical: Insets.xs),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text('Reset'),
-                  ),
-          ),
+          const _SectionHeader('Measured power'),
           _SectionHint(
-              'Use this if your power numbers feel high or low compared to '
-              'another power meter you trust. Scales steady-state and '
-              'acceleration response together.'),
-          const SizedBox(height: Insets.sm),
-          _PowerScaleSlider(
-            value: cal.powerScale,
-            onChanged: (v) => setState(() => cal.powerScale = v),
-            onChangeEnd: (v) async {
-              await cal.setPowerScale(v);
-              if (mounted) setState(() {});
-            },
+              'The most accurate option. Ride a power meter grid once '
+              '(docs/reference-session.md), run fit_reference.py, and paste '
+              'the table here. It replaces the physics model with the watts '
+              'measured on your bike.'),
+          const SizedBox(height: Insets.md),
+          _PowerTableCard(
+            table: cal.powerTable,
+            onPaste: _pasteTable,
+            onRemove: _removeTable,
           ),
+
+          if (!cal.usesTable) ...[
+            const SizedBox(height: Insets.xl),
+            _SectionHeader(
+              'Power scale',
+              trailing: cal.powerScale == Calibration.defaultPowerScale
+                  ? null
+                  : TextButton(
+                      onPressed: _resetPowerScale,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: Insets.sm, vertical: Insets.xs),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Reset'),
+                    ),
+            ),
+            _SectionHint(
+                'Use this if your power numbers feel high or low compared to '
+                'another power meter you trust. Scales steady-state and '
+                'acceleration response together.'),
+            const SizedBox(height: Insets.sm),
+            _PowerScaleSlider(
+              value: cal.powerScale,
+              onChanged: (v) => setState(() => cal.powerScale = v),
+              onChangeEnd: (v) async {
+                await cal.setPowerScale(v);
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
 
           const SizedBox(height: Insets.xl),
           const _SectionHeader('Calibrate to your bike'),
-          _SectionHint(
-              'Each bike’s flywheel is slightly different. Auto-calibration '
-              'measures how yours slows down at different resistance levels '
-              'so the power numbers match your bike more accurately. Takes '
-              '5–10 minutes.'),
+          _SectionHint(cal.usesTable
+              ? 'Not used while a measured table is active. Auto-calibration '
+                'tunes the physics model, which the table replaces.'
+              : 'Each bike’s flywheel is slightly different. Auto-calibration '
+                'measures how yours slows down at different resistance levels '
+                'so the power numbers match your bike more accurately. Takes '
+                '5–10 minutes.'),
           const SizedBox(height: Insets.md),
           FilledButton.tonalIcon(
             onPressed: () async {
@@ -296,6 +385,69 @@ class _PowerPreviewCard extends StatelessWidget {
             ),
           ],
         )),
+      ]),
+    );
+  }
+}
+
+class _PowerTableCard extends StatelessWidget {
+  final PowerTable? table;
+  final VoidCallback onPaste;
+  final VoidCallback onRemove;
+  const _PowerTableCard({
+    required this.table,
+    required this.onPaste,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final t = table;
+    final String title;
+    final String detail;
+    if (t == null) {
+      title = 'Physics model';
+      detail = 'No measured table loaded. Power comes from the spin-down '
+          'model and the Power scale slider.';
+    } else {
+      title = 'Measured table active';
+      final src = t.source.isEmpty ? 'unnamed source' : t.source;
+      detail = '${t.cellCount} points, R ${t.r.first.round()}–'
+          '${t.r.last.round()}, ${t.cadenceRpm.first.round()}–'
+          '${t.cadenceRpm.last.round()} rpm. $src.';
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(Radii.card),
+      ),
+      padding: const EdgeInsets.all(Insets.lg),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(t == null ? Icons.functions : Icons.table_chart_outlined,
+              color: cs.primary),
+          const SizedBox(width: Insets.sm),
+          Expanded(child: Text(title,
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600))),
+        ]),
+        const SizedBox(height: Insets.xs),
+        Text(detail,
+            style: text.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant, height: 1.4)),
+        const SizedBox(height: Insets.md),
+        Row(children: [
+          FilledButton.tonalIcon(
+            onPressed: onPaste,
+            icon: const Icon(Icons.content_paste),
+            label: Text(t == null ? 'Paste table' : 'Replace table'),
+          ),
+          if (t != null) ...[
+            const SizedBox(width: Insets.sm),
+            TextButton(onPressed: onRemove, child: const Text('Remove')),
+          ],
+        ]),
       ]),
     );
   }
