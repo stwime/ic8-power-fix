@@ -65,61 +65,62 @@ and the covered range. The Power scale slider is hidden while a table is
 active because the table is already in measured watts. Remove the table
 to return to the physics model.
 
-## Option B: falling mass (no power meter)
+## Option B: hanging mass (no power meter, no cost)
 
-A known mass on a cord wound round a drum of known radius applies a known
-torque to the drivetrain. That is the absolute quantity spin-downs lack.
-It pins the crank inertia, which is the one unknown that sets the model's
-scale. It does not test the brake shape at high R; only Option A does.
+A known mass applying a known torque is the absolute quantity spin-downs
+lack. It pins the crank inertia, which is the one unknown that sets the
+model's scale. The spin-downs cover riding cadences up to about 100 rpm
+for R ≤ 74 and 60 to 90 rpm for R ≥ 81, so with the inertia measured
+the output is anchored over that whole range. What it does not test is
+the brake shape beyond it, and the warm-disc drift; only Option A does.
 
 ### Setup
 
-- A cord, a mass you can weigh (a filled bottle or a kettlebell, 3 to
-  8 kg), and a drum of known radius. The flywheel rim is the natural drum
-  if enough of it is reachable to wind a few turns; otherwise fix a short
-  length of pipe to the crank side. Measure the radius where the cord
-  leaves the drum.
+- A mass you can weigh, 5 to 10 kg (a kettlebell, a bag of books, a
+  bucket of water). Weigh it on a bathroom scale.
+- A short cord or strap with a loop to hang it from one pedal spindle.
+- The crank length: pedal spindle centre to bottom bracket centre,
+  measured with a ruler, about 0.17 m.
 - The same camera setup as the spin-down videos, pointed at the crank,
-  and `analysis/track_crank.py` to extract ω(t). Shoot at 120 or 240 fps:
-  the belt ratio divides the cord travel, so a 2 m drop turns the crank
-  less than half a turn and is over in about a second.
-- Count the belt ratio once: film the flywheel and crank together and
-  count flywheel turns per crank turn. The repo uses 4.5.
+  and `analysis/track_crank.py` to extract ω(t). 60 fps is enough; the
+  swing takes one to two seconds.
 
 ### Record
 
-1. Set R to 0. Wind the cord so the mass hangs just off the floor at
-   full height, hold the crank, start filming, release. Let the mass run
-   the full drop. Stop it on a cushion, not the floor, and keep hands and
-   feet clear of the cord.
-2. Three drops; the spread of the fitted inertia is its uncertainty.
-3. Optionally one or two drops at a higher R as a consistency check. The
-   brake torque at the low speeds a short drop reaches is small next to
-   the applied torque, so these constrain the scale only weakly.
+1. Set R to 0. Hang the mass from the pedal with that crank arm
+   horizontal and forward, hold the crank still, start filming, let go.
+   The crank swings down half a turn and the mass drops twice the crank
+   length, so nothing reaches the floor. Keep feet clear.
+2. Three releases from the same position. The spread of the fitted
+   inertia is its uncertainty.
 
 ### Analyse
 
 ```
-python analysis/track_crank.py drop_R0.mov --output drop_R0.csv
-python analysis/falling_mass.py --track drop_R0.csv --mass 5.0 \
-    --radius 0.19 --drum flywheel --ratio 4.5 --R 0
+python analysis/track_crank.py drop1.mov --output drop1.csv
+python analysis/falling_mass.py --track drop1.csv --mass 8.0 \
+    --radius 0.17 --drum pedal --R 0
 ```
 
-The script fits a single scale `s` that multiplies the model's torque and
-inertia together and prints the implied crank inertia and the Power scale
-slider value.
+The script finds the release and the bottom of the swing by itself, fits
+a single scale `s` that multiplies the model's torque and inertia
+together, and prints the implied crank inertia and the Power scale slider
+value. If you released from somewhere other than horizontal, pass
+`--start-deg` with the angle past horizontal.
 
-Ignored in the analysis: cord mass, pulley friction if a pulley is used,
-and the drum radius uncertainty, which enters linearly in the applied
-torque and squared in the mass's own contribution to the inertia. With
-5 kg on the flywheel rim that contribution is about half the crank
-inertia, so measure the radius carefully or use a lighter mass.
+A cord wound round the flywheel rim or a drum on the crank side works
+too (`--drum flywheel --radius <rim radius> --ratio 4.5`), but the belt
+ratio divides the travel: a 2 m drop turns the crank under half a turn in
+about a second and needs 120 or 240 fps video.
+
+Ignored in the analysis: cord mass and the small sideways tilt of the
+cord as the pedal moves. The mass's own motion is included.
 
 ## What the numbers mean afterwards
 
 | Result | Action |
 | --- | --- |
 | Ratio flat, mean within 5% of 1 | Nothing to change. |
-| Ratio flat, mean elsewhere | Set the Power scale slider to the mean, or set `I_CRANK` in `analysis/fit_wouterse.py` and `defaultICrank` in `bridge/lib/physics/calibration.dart` to the implied inertia. |
+| Ratio flat, mean elsewhere, or Option B gives a different inertia | Set the Power scale slider to the ratio or to `s`, or set `I_CRANK` in `analysis/fit_wouterse.py` and `defaultICrank` in `bridge/lib/physics/calibration.dart` to the implied inertia. |
 | Ratio trends with R | Load the table in the app. The spin-down model stays as documentation of the shape it predicted. |
 | Warm cells lower than cold | Note the size. A thermal term is the next model change if it exceeds the scatter. |

@@ -63,14 +63,14 @@ overflow area that training apps don't scan.
 If warm-up power feels off, use Settings → **Auto-calibrate**
 (5–10 min, on-device). For absolute scale, do one reference session
 ([docs/reference-session.md](docs/reference-session.md)): a pedal
-power meter grid, or a falling-mass drop for the inertia. The session
+power meter grid, or a mass hung from a pedal for the inertia. The session
 either sets **Power scale** or produces a measured P(R, cadence) table
 that you paste into Settings → **Measured power**, where it replaces
 the physics model.
 
 ## Limitations
 
-- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides, which is a weak anchor; the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. Expect the output to be within roughly ±20% of true power and the error to vary with $R$. The only solid fix is one reference session on this bike, described in [docs/reference-session.md](docs/reference-session.md): a pedal power meter swept over $R$ 10 to 90 at three cadences, which `analysis/fit_reference.py` turns into a measured power table the app can use in place of the model, or a falling-mass drop that pins the inertia. Another unit adds its own tolerance on top.
+- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides, which is a weak anchor; the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. Expect the output to be within roughly ±20% of true power and the error to vary with $R$. The only solid fix is one reference session on this bike, described in [docs/reference-session.md](docs/reference-session.md): a pedal power meter swept over $R$ 10 to 90 at three cadences, which `analysis/fit_reference.py` turns into a measured power table the app can use in place of the model, or a mass hung from a pedal and filmed, which pins the inertia at no cost. Another unit adds its own tolerance on top.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
 - **Roll-off at the highest R values is theory, not data.** Our spin-downs sit mostly in the linear-damping regime where the brake is roughly linear in cadence. The saturating roll-off above that is pinned by classical eddy-brake theory (see "The fix" below) rather than fitted to our measurements.
 
@@ -149,7 +149,7 @@ analysis/          Calibration pipeline (Python): nRF Connect log → CSV
                    → video crank tracking → spin-down curation →
                    strict-Wouterse ODE fit. fit_reference.py compares
                    the model to a power meter and writes the table;
-                   falling_mass.py gets the inertia from a drop. Each
+                   falling_mass.py gets the inertia from a hung mass. Each
                    script documents its role at the top; deps in
                    `analysis/requirements.txt`.
 docs/              reference-session.md (how to anchor absolute power)
