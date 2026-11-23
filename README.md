@@ -20,10 +20,10 @@ There's no resistance control. The bike has a manual dial, so ERG mode isn't pos
 
 ## Why use this
 
-- **Right shape across the resistance range.** The bike's formula uses cad^1.5 and R^0.83 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R.
+- **Right shape across the resistance range.** The bike's formula goes as cad^1.6 and R^0.82 (R is the resistance dial). The actual eddy-current physics is quadratic in cadence and saturates in R.
 - **Honest power during transients.** Surging from 80 to 110 rpm spins up the flywheel — roughly 80–130 W the bike doesn't see. The bridge adds the kinetic-energy term `I·ω·dω/dt`, so surges read at full value and coastdowns drop to zero on time.
 - **Crank-precision cadence.** The bridge reads the bike's CSC characteristic (per-revolution counts timed to 1/1024 s) on top of the noisier 1 Hz FTMS cadence field, which sharpens the acceleration math during fast transients.
-- **Low-R drivetrain fine-tune.** Auto-calibrate (Settings → Auto-calibrate) refits the residual drivetrain drag from flywheel-decay curves — 5–10 minutes, on-device. It matters most at warm-up resistances; at race-pace R the eddy brake dominates. For absolute scale, use the Power scale slider against an external power meter.
+- **Low-R drivetrain fine-tune.** Auto-calibrate (Settings → Auto-calibrate) refits the residual drivetrain drag from flywheel-decay curves — 5–10 minutes, on-device. It matters most at warm-up resistances; at race-pace R the eddy brake dominates. For absolute scale, use the Power scale slider against an external power meter or your FTP from one.
 - **Standard FTMS out, no firmware mods.** The bridge re-broadcasts as a standard FTMS power meter, so any training app that pairs to FTMS works. The bike doesn't change.
 
 ## Supported models
@@ -63,14 +63,15 @@ overflow area that training apps don't scan.
 If warm-up power feels off, use Settings → **Auto-calibrate**
 (5–10 min, on-device). For absolute scale, do one reference session
 ([docs/reference-session.md](docs/reference-session.md)): a pedal
-power meter grid, or a mass hung from a pedal for the inertia. The session
-either sets **Power scale** or produces a measured P(R, cadence) table
-that you paste into Settings → **Measured power**, where it replaces
-the physics model.
+power meter grid, a mass hung from a crank arm for the inertia, or, with
+no hardware, one hard indoor effort against your FTP from a road-bike
+power meter. The session either sets **Power scale** or produces a
+measured P(R, cadence) table that you paste into Settings → **Measured
+power**, where it replaces the physics model.
 
 ## Limitations
 
-- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides, which is a weak anchor; the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. Expect the output to be within roughly ±20% of true power and the error to vary with $R$. The only solid fix is one reference session on this bike, described in [docs/reference-session.md](docs/reference-session.md): a pedal power meter swept over $R$ 10 to 90 at three cadences, which `analysis/fit_reference.py` turns into a measured power table the app can use in place of the model, or a mass hung from a pedal and filmed, which pins the inertia at no cost. Another unit adds its own tolerance on top.
+- **Absolute scale is not anchored by a power meter on this bike.** Spin-downs measure the brake's shape in cadence and dial position, but only up to the flywheel inertia $I$: a stronger brake on a heavier flywheel slows down identically, so no analysis of spin-downs can set the scale. $I$ is a geometric estimate scaled down 17% to match heart-rate-matched outdoor rides. A threshold check puts the output about 11% high: the reference rider's 20-minute indoor climb at $R \approx 31$ reads 234 W in the model and 292 W on the bike's display, an indoor threshold of 222 W against a 200 W FTP on an outdoor power meter (`analysis/ftp_anchor.py`). Both checks go through one rider's body and hold near $R \approx 30$; elsewhere the error can vary with $R$, and the brake's ceiling comes from the manufacturer's 1000 W spec, not from data. [docs/reference-session.md](docs/reference-session.md) describes three ways to set the scale on your bike: a pedal power meter swept over $R$ 10 to 90 at three cadences, which `analysis/fit_reference.py` turns into a measured power table that replaces the model; a mass hung from a crank arm and filmed, which pins the inertia at no cost; or one hard indoor effort against your FTP from a road-bike power meter. Another unit adds its own tolerance on top.
 - **High-cadence cap.** The IC8 saturates broadcast cadence at 125 rpm. Above the cap, the bridge falls back to CSC-derived cadence. Without CSC it clamps and slightly underestimates power at very high rpm.
 - **Roll-off at the highest R values is theory, not data.** Our spin-downs sit mostly in the linear-damping regime where the brake is roughly linear in cadence. The saturating roll-off above that is pinned by classical eddy-brake theory (see "The fix" below) rather than fitted to our measurements.
 
@@ -81,9 +82,9 @@ the physics model.
 The IC8 broadcasts power as a function of cadence and the resistance
 dial:
 
-$$P_{\text{IC8}} \approx 0.019 \cdot R^{0.83} \cdot \text{cad}^{1.5}$$
+$$P_{\text{IC8}} \approx 0.0125 \cdot R^{0.82} \cdot \text{cad}^{1.6}$$
 
-Both exponents are wrong. Real eddy-current physics gives $P \propto \omega^2$ in the linear regime, not $\text{cad}^{1.5}$, and the absolute scale drifts unit-to-unit and across the dial. That's why forum reports disagree about whether the bike reads high or low.
+(fit to logged BLE holds, within 7% at every $R$ from 10 up). Both exponents are wrong. Real eddy-current physics gives $P \propto \omega^2$ in the linear regime, not $\text{cad}^{1.6}$, and the absolute scale drifts unit-to-unit and across the dial. That's why forum reports disagree about whether the bike reads high or low.
 
 The shape of the gap is consistent though. Dashed lines are what the bike broadcasts, solid lines are what the bridge re-broadcasts:
 
@@ -121,9 +122,9 @@ Fit by integrating $I\,\dot\omega = -\tau_{\text{brake}} - \tau_c - I\,\beta\,\o
 
 The H-shape, $\kappa$, and $\tau_c$ ship as fixed defaults — they entangle brake physics, the firmware's dial-to-magnet mapping, and bearing/belt friction in ways spin-down data alone can't separate. Auto-calibrate refits only $\beta$ against the linear-regime collapse $\lambda_{\text{eff}}(R) = \beta + (2\alpha\kappa/I) \cdot H(R)^2$. $\alpha$ and $I_{\text{crank}}$ are structurally degenerate in spin-down data (only their ratio appears in $I\,\dot\omega = -\tau$), so absolute scale is the Power scale slider's job, not auto-calibrate's.
 
-**Inertia: geometric estimate, then an indirect correction.** The flywheel is a 5 mm aluminum disc ($R = 23$ cm) carrying two dense weight-rings on its faces. From ruler-measured ring dimensions and the ruler-measured belt ratio $g = 4.5$ (which enters as $g^2$), the geometric prediction is $I_{\text{crank}} \approx 9.09$ kg·m².
+**Inertia: geometric estimate, then an indirect correction.** The flywheel is a 5 mm aluminum disc ($R = 23$ cm) carrying two dense weight-rings on its faces. From ruler-measured ring dimensions and the ruler-measured belt ratio $g = 4.5$ (which enters as $g^2$), the geometric prediction is $I_{\text{crank}} \approx 9.09$ kg·m². That value takes the rings to be lead, the density at which the measured volumes add up to the 18 kg on the spec sheet. Steel rings of the same size give $I_{\text{crank}} = 6.66$ kg·m² and a 13.1 kg flywheel, cast iron 6.21. The ring heights are ruler upper bounds, and the hub, pulleys and crank are left out. A magnet on the rings settles the material, and counting flywheel turns per crank turn checks $g$.
 
-Indoor rides at that $I$ read about 17% higher than outdoor rides on a 4iiii crank meter at the same heart rate and cadence. That comparison goes through heart rate, so it is sensitive to heat, drift, and day-to-day form, and it is not a power-meter calibration of this bike. $I_{\text{crank}}$ is the only knob that lowers absolute output without breaking the spin-down fit, so it ships at **$I_{\text{crank}} = 7.55$ kg·m²** with $\{H, \beta, \tau_c\}$ refit at that $I$ (RSS = 0.0188 across 51,792 samples). Treat it as uncertain by tens of percent until a power meter is put on this bike. Owners of IC4/C6 units who did that report the bike's own number over-reads by 10 to 40%, growing with $R$, which is roughly where this model lands below $R \approx 50$ but not above.
+Indoor rides at that $I$ read about 17% higher than outdoor rides on a 4iiii crank meter at the same heart rate and cadence. That comparison goes through heart rate, so it is sensitive to heat, drift, and day-to-day form, and it is not a power-meter calibration of this bike. $I_{\text{crank}}$ is the only knob that lowers absolute output without breaking the spin-down fit, so it ships at **$I_{\text{crank}} = 7.55$ kg·m²** with $\{H, \beta, \tau_c\}$ refit at that $I$ (RSS = 0.0188 across 51,792 samples). A maximal effort is a firmer check than heart rate: the rider's 20-minute indoor climb at $R \approx 31$ puts their indoor threshold 11% above their 200 W outdoor FTP at this $I$, which would mean $I_{\text{crank}} \approx 6.8$ kg·m² (`analysis/ftp_anchor.py`; $R$ is recovered from the bike's broadcast formula, which costs up to about 5% in model power). That is about 2% above the steel-ring geometry. The shipped value stays at 7.55 until the ring material is checked; a rider matching their own FTP sets Power scale instead. The FTP check covers one rider near $R \approx 30$, and the shape across the rest of the dial is the spin-downs' alone until a power meter is put on this bike. Owners of IC4/C6 units who did that report the bike's own number over-reads by 10 to 40%, growing with $R$, which is roughly where this model lands below $R \approx 50$ but not above.
 
 Both anchors are soft. A ±30% error in $\alpha$ distorts predicted power a few percent at warm-up R, growing to roughly $-22\%$ / $+12\%$ at high R (`analysis/alpha_sensitivity.py`). The Power scale slider absorbs a uniform multiplier but not the R-shape distortion. Ground truth needs a pedal power meter on this bike, swept across R at a few cadences; the spin-down work then only has to supply the transient (kinetic-energy) term.
 
@@ -149,7 +150,8 @@ analysis/          Calibration pipeline (Python): nRF Connect log → CSV
                    → video crank tracking → spin-down curation →
                    strict-Wouterse ODE fit. fit_reference.py compares
                    the model to a power meter and writes the table;
-                   falling_mass.py gets the inertia from a hung mass. Each
+                   falling_mass.py gets the inertia from a hung mass;
+                   ftp_anchor.py sets the scale from your FTP. Each
                    script documents its role at the top; deps in
                    `analysis/requirements.txt`.
 docs/              reference-session.md (how to anchor absolute power)

@@ -25,6 +25,7 @@ defaults change.
 from __future__ import annotations
 
 import csv
+import sys
 from pathlib import Path
 from collections import defaultdict
 
@@ -33,6 +34,10 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+# The bike's own broadcast formula, fit to logged BLE data (provenance in
+# bridge_model.py). See README "Why the bike's numbers can't be trusted".
+from analysis.bridge_model import ic8_broadcast_power  # noqa: E402
 FIG_DIR = ROOT / "docs" / "figures"
 SPRINT_CSV = ROOT / "data/calibration/spin_downs_apr29.csv"
 ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
@@ -51,11 +56,6 @@ KAPPA = 0.1585
 I_CRANK = 7.55
 POWER_SCALE = 1.00
 
-# IC8's own broadcast formula (firmware fit). See README "Why the bike's
-# numbers can't be trusted".
-IC8_GAIN = 0.019
-IC8_R_EXP = 0.83
-IC8_CAD_EXP = 1.5
 
 
 def _hill_term(r, rh, p):
@@ -82,10 +82,6 @@ def bridge_steady(r, omega):
     return (tau_eddy + tau_residual) * omega
 
 
-def ic8_broadcast(r, cad):
-    return IC8_GAIN * np.power(r, IC8_R_EXP) * np.power(cad, IC8_CAD_EXP)
-
-
 def plot_power_curves():
     cad = np.linspace(30, 110, 240)
     omega = cad * np.pi / 30.0
@@ -100,7 +96,7 @@ def plot_power_curves():
               "#d62728"]  # red         (R=60)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     for r, color in zip(rs, colors):
-        p_ic8 = ic8_broadcast(r, cad)
+        p_ic8 = ic8_broadcast_power(r, cad)
         p_br = bridge_steady(r, omega)
         ax.plot(cad, p_ic8, "--", color=color, lw=1.6, alpha=0.85)
         ax.plot(cad, p_br, "-", color=color, lw=2.2, label=f"R = {r}")

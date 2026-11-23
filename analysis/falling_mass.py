@@ -7,9 +7,12 @@ analysis/track_crank.py, and run this on the result.
 
 Two ways to apply the mass:
 
-  --drum pedal     (easiest) Hang the mass from a pedal with the crank
-                   horizontal and release. The crank arm is the lever, so
-                   nothing is wound and the belt ratio does not enter.
+  --drum pedal     (easiest) Hang the mass from the end of a crank arm
+                   (a loop girth-hitched round the arm next to the pedal,
+                   not the mass stood on the pedal, which tips it off)
+                   with the arm horizontal and release. The crank arm
+                   is the lever, so nothing is wound and the belt ratio
+                   does not enter.
                    Torque is m·g·L·cos ψ with ψ the angle swept past
                    horizontal; the fit uses the half turn down to the
                    bottom, where ω peaks. --radius is the crank length

@@ -257,8 +257,9 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             _SectionHint(
                 'Use this if your power numbers feel high or low compared to '
-                'another power meter you trust. Scales steady-state and '
-                'acceleration response together.'),
+                'another power meter you trust, or to your FTP measured on '
+                'one. Scales steady-state and acceleration response '
+                'together.'),
             const SizedBox(height: Insets.sm),
             _PowerScaleSlider(
               value: cal.powerScale,

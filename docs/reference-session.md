@@ -1,11 +1,12 @@
 # Reference session: putting real watts on the IC8
 
 Spin-downs fix the *shape* of the IC8's brake curve but can only ever
-measure torque divided by inertia. One absolute measurement on this bike
-settles the scale. This page describes the two ways to get it and how to
-feed the result into the app.
+measure torque divided by inertia: a stronger brake on a heavier flywheel
+slows down identically. One absolute measurement settles the scale. This
+page describes three ways to get it, from most to least precise, and how
+to feed the result into the app.
 
-Either way the outcome is one of:
+A power meter (Option A) also tests the shape. Its outcome is one of:
 
 - **The ratio reference/model is flat across the dial.** The physics shape
   is right. Set the Power scale slider to the ratio, or load the table.
@@ -78,7 +79,11 @@ the brake shape beyond it, and the warm-disc drift; only Option A does.
 
 - A mass you can weigh, 5 to 10 kg (a kettlebell, a bag of books, a
   bucket of water). Weigh it on a bathroom scale.
-- A short cord or strap with a loop to hang it from one pedal spindle.
+- A cord or strap, girth-hitched round one crank arm right next to the
+  pedal. Do not stand the mass on the pedal: the pedal turns freely on
+  its axle and tips it off. Hung from the arm, the loop cannot slide off
+  either: as the crank swings down, the pull has an outward component
+  along the arm that holds the loop against the pedal.
 - The crank length: pedal spindle centre to bottom bracket centre,
   measured with a ruler, about 0.17 m.
 - The same camera setup as the spin-down videos, pointed at the crank,
@@ -87,7 +92,7 @@ the brake shape beyond it, and the warm-disc drift; only Option A does.
 
 ### Record
 
-1. Set R to 0. Hang the mass from the pedal with that crank arm
+1. Set R to 0. Hang the mass from the crank arm with that arm
    horizontal and forward, hold the crank still, start filming, let go.
    The crank swings down half a turn and the mass drops twice the crank
    length, so nothing reaches the floor. Keep feet clear.
@@ -116,11 +121,76 @@ about a second and needs 120 or 240 fps video.
 Ignored in the analysis: cord mass and the small sideways tilt of the
 cord as the pedal moves. The mass's own motion is included.
 
+## Option C: your threshold power (no hardware)
+
+If you know your FTP from a real power meter, usually on your road bike,
+your body can carry that number to the IC8. Any gap between your indoor
+and outdoor threshold (heat, cooling, position, motivation) and your
+form on the day land in the result, and it holds at the dial positions
+and cadences you rode; the spin-downs supply the shape elsewhere. It
+needs nothing you do not have.
+
+### Record
+
+Ride an all-out 20-minute effort on the IC8, or a hard hour, with your
+training app recording, at the dial positions you normally ride. Pair
+the app either to the bike itself or to "IC Bike (corrected)"; for the
+latter note the Power scale it was set to. Export the `.fit` file. Rides
+you already have work if they hold such an effort.
+
+### Analyse
+
+```
+python analysis/ftp_anchor.py --indoor ftp_test.fit --ftp 200
+```
+
+For a ride recorded through the bridge, add `--source bridge
+--scale-used 1.0` (the Power scale during the ride, 1.0 = 100%). The
+bike's own files carry power and cadence but not the dial position, so
+the script recovers R by inverting the bike's broadcast formula, which
+is within 2.5% of the bike's number in every R band and costs up to
+about 5% in model power. Add `--outdoor road.fit ...` to print your outdoor
+best averages beside the indoor ones; without `--ftp` the outdoor files
+supply the threshold, which only means something if they hold an
+all-out effort of 20 minutes or more.
+
+The script prints the best averages over 5 to 60 minutes for the bridge
+model at 100%, the number the training app showed and the outdoor files,
+the indoor threshold max(0.95 × best 20 min, best 60 min), and the Power
+scale that makes it equal your FTP.
+
+### Load
+
+Set Settings, Power scale to the printed percentage.
+
+## Cross-check: flywheel geometry
+
+The crank inertia is g² times the flywheel's, with g the flywheel turns
+per crank turn. On the reference bike the flywheel is a 5 mm aluminium
+disc of radius 23 cm with a weight ring on each face, ruler-measured at
+radius 14 to 18 cm by 2.03 cm and 13 to 17 cm by 1.52 cm. The ring
+material sets the answer:
+
+| Rings | Flywheel | Crank inertia at g = 4.5 | Power scale |
+| --- | --- | --- | --- |
+| lead | 18.0 kg | 9.09 kg·m² | 120% |
+| steel | 13.1 kg | 6.66 kg·m² | 88% |
+| cast iron | 12.2 kg | 6.21 kg·m² | 82% |
+
+Two checks need no tools. A fridge magnet sticks to steel and iron and
+not to lead; try it on the rings, away from the brake magnets at the
+rim. With a mark on the flywheel, turn the crank 10 times and count
+flywheel turns to the nearest eighth: that gives g to about 0.3%, and g
+enters squared. The ring heights are ruler upper bounds with chamfered
+edges, and the hub and pulleys are left out, so this cross-checks the
+scale from A, B or C rather than replacing it. Power scale is the crank
+inertia divided by 7.55.
+
 ## What the numbers mean afterwards
 
 | Result | Action |
 | --- | --- |
 | Ratio flat, mean within 5% of 1 | Nothing to change. |
-| Ratio flat, mean elsewhere, or Option B gives a different inertia | Set the Power scale slider to the ratio or to `s`, or set `I_CRANK` in `analysis/fit_wouterse.py` and `defaultICrank` in `bridge/lib/physics/calibration.dart` to the implied inertia. |
+| Ratio flat, mean elsewhere, or Option B or C gives a different scale | Set the Power scale slider to the ratio, to `s` or to the printed percentage, or set `I_CRANK` in `analysis/fit_wouterse.py` and `defaultICrank` in `bridge/lib/physics/calibration.dart` to the implied inertia. |
 | Ratio trends with R | Load the table in the app. The spin-down model stays as documentation of the shape it predicted. |
 | Warm cells lower than cold | Note the size. A thermal term is the next model change if it exceeds the scatter. |
