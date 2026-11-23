@@ -49,8 +49,10 @@ from scipy.optimize import least_squares
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "analysis"))
+sys.path.insert(0, str(ROOT))
 
 import physics_first_brake as pfb
+from analysis import bridge_model as bm  # noqa: E402
 from fit_wouterse import collect, I_CRANK, hill as empirical_hill
 
 OUT_DIR = ROOT / "analysis_out"
@@ -193,12 +195,13 @@ def main():
     print(f"  α/κ   = {a_over_k:>8.1f} W   (asymptotic peak)")
     print(f"  RSS   = {rss:>8.6f}")
     print()
-    print("=== Reference: empirical-Hill fit (fit_wouterse.py) ===")
-    print(f"  α     = 165.000 (pinned to 1000 W spec via α/κ)")
-    print(f"  κ     = 0.1600   R_h = 72.9   p = 1.27   β = 0.0389")
-    print(f"  2ακ   = 52.800")
-    print(f"  α/κ   = 1031.3 W")
-    print(f"  RSS   = 0.0431  (from README; recompute locally to confirm)")
+    print("=== Reference: shipped two-Hill fit (analysis/bridge_model.py) ===")
+    print(f"  α     = {bm.ALPHA:>8.3f} N·m   (pinned with I)")
+    print(f"  κ     = {bm.KAPPA:>8.4f} s/rad (pinned)")
+    print(f"  β     = {bm.BETA:>8.4f} 1/s   τ_c = {bm.TAU_C:.4f} N·m")
+    print(f"  2ακ   = {2 * bm.ALPHA * bm.KAPPA:>8.3f} N·m·s/rad")
+    print(f"  α/κ   = {bm.ALPHA / bm.KAPPA:>8.1f} W")
+    print(f"  RSS   = 0.0188  (fit_wouterse.py; recompute locally to confirm)")
     print()
 
     # Interpretation cheat-sheet

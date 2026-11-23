@@ -14,13 +14,15 @@ import 'dart:convert';
 ///       "r": [10, 20, ..., 90],
 ///       "cadence_rpm": [60, 80, 100],
 ///       "watts": [[...per cadence...], ...per R...],
-///       "i_crank": 7.55
+///       "i_crank": 6.12
 ///     }
 ///
 /// `watts[i][j]` is the power at `r[i]` and `cadence_rpm[j]`. Both grids
 /// must be strictly increasing. `i_crank` is the inertia used for the
-/// acceleration term, in kg·m² at the crank; it is optional and defaults
-/// to the physics model's value.
+/// acceleration term, in kg·m² at the crank: the model's inertia times
+/// the session's mean power-meter/model ratio, since spin-downs fix only
+/// torque over inertia. It is optional and defaults to the physics
+/// model's value.
 class PowerTable {
   static const int formatVersion = 1;
 

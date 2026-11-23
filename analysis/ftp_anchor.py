@@ -104,7 +104,7 @@ def model_power(ride: dict[str, np.ndarray], source: str,
     ok = (cad >= MIN_CADENCE) & (p > 0)
     r[ok] = np.clip(resistance_from_broadcast(p[ok], cad[ok]), 0.0, R_MAX)
     out = np.zeros_like(p)
-    out[ok] = [brake_power(ri, ci) for ri, ci in zip(r[ok], cad[ok])]
+    out[ok] = brake_power(r[ok], cad[ok])
     return out, r
 
 

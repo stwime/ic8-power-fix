@@ -18,9 +18,9 @@ Figures regenerated:
                                     every segment, showing the fit
                                     tracks the actual trajectories.
 
-Constants are duplicated from bridge/lib/physics/calibration.dart so
-this script has no Flutter/Dart dependency. Keep them in sync if
-defaults change.
+The model comes from analysis/bridge_model.py, the Python mirror of
+bridge/lib/physics/calibration.dart, so the figures show what the app
+broadcasts.
 """
 from __future__ import annotations
 
@@ -35,51 +35,22 @@ from scipy.integrate import solve_ivp
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-# The bike's own broadcast formula, fit to logged BLE data (provenance in
-# bridge_model.py). See README "Why the bike's numbers can't be trusted".
-from analysis.bridge_model import ic8_broadcast_power  # noqa: E402
+from analysis.bridge_model import (  # noqa: E402
+    I_CRANK,
+    ic8_broadcast_power,
+    tau_brake,
+)
 FIG_DIR = ROOT / "docs" / "figures"
 SPRINT_CSV = ROOT / "data/calibration/spin_downs_apr29.csv"
 ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUTDOOR_FIT = ROOT / "data/outdoor/Lunch_Ride.fit"
 
-# Mirror of Calibration defaults — bridge/lib/physics/calibration.dart.
-ALPHA = 165.0
-BETA = 0.0154
-TAU_C = 1.1468
-W_MIX = 0.5994
-RH1 = 185.036
-P1 = 0.669
-RH2 = 59.372
-P2 = 2.246
-KAPPA = 0.1585
-I_CRANK = 7.55
-POWER_SCALE = 1.00
-
-
-
-def _hill_term(r, rh, p):
-    return r ** p / (r ** p + rh ** p)
-
-
-def hill(r):
-    """Sum-of-two-Hills H(R), matching Calibration.hillAt in bridge code."""
-    r = np.asarray(r, dtype=float)
-    h = np.zeros_like(r)
-    m = r > 0
-    h[m] = (W_MIX * _hill_term(r[m], RH1, P1)
-            + (1.0 - W_MIX) * _hill_term(r[m], RH2, P2))
-    return h
+POWER_SCALE = 1.00   # the app's default
 
 
 def bridge_steady(r, omega):
-    """Bridge steady-state power, mirroring Calibration.brakePowerAt
-    with powerScale = POWER_SCALE."""
-    h = hill(r)
-    x = KAPPA * h * omega
-    tau_eddy = ALPHA * POWER_SCALE * h * 2.0 * x / (1.0 + x * x)
-    tau_residual = POWER_SCALE * (TAU_C + I_CRANK * BETA * omega)
-    return (tau_eddy + tau_residual) * omega
+    """Bridge steady-state power at POWER_SCALE, as Calibration.brakePowerAt."""
+    return tau_brake(r, omega, POWER_SCALE) * omega
 
 
 def plot_power_curves():
@@ -136,7 +107,8 @@ def plot_indoor_surge():
     # R=25 acceleration at t≈35–50. Cadence climbs 24 → 125 rpm in ~8 s,
     # holds at the FTMS 125-rpm cap for ~2 s, then decelerates as the
     # rider stops pushing. R is cleanly 25 throughout. Peak KE pulse
-    # during the steep ramp is ~150 W on top of ~270 W steady.
+    # during the steep ramp is ~160 W on top of ~145 W steady; steady
+    # peaks near 245 W at the cadence cap.
     t, cad, r = _read_window(SPRINT_CSV, 33.0, 50.5)
     omega = cad * np.pi / 30.0
 
@@ -317,17 +289,9 @@ def _load_spindowns():
     return out
 
 
-def _tau_model(R, omega):
-    h = float(hill(np.array([R]))[0])
-    x = KAPPA * h * omega
-    tau_eddy = ALPHA * h * 2.0 * x / (1.0 + x * x)
-    tau_residual = TAU_C + I_CRANK * BETA * omega
-    return tau_eddy + tau_residual
-
-
 def _integrate(R, t, omega0):
     def rhs(_t, y):
-        return [-_tau_model(R, y[0]) / I_CRANK]
+        return [-tau_brake(R, y[0]) / I_CRANK]
     sol = solve_ivp(rhs, (float(t[0]), float(t[-1]) + 1e-6),
                     [omega0], t_eval=t,
                     method="LSODA", rtol=1e-7, atol=1e-9)

@@ -42,12 +42,13 @@ import 'power_table.dart';
 /// (analysis/residual_drag_shape.py). Physically that's right: bearing and
 /// belt friction are roughly constant in ω, not viscous.
 ///
-///   α     = peak torque amplitude (N·m) — anchored to 1000 W spec, shared
-///           across IC8/IC4/C6/C7 (same magnets, same actuator, same firmware)
+///   α     = peak torque amplitude (N·m) — set by I_crank through the
+///           spin-down fit, shared across IC8/IC4/C6/C7 (same magnets,
+///           same actuator, same firmware)
 ///   β     = viscous residual drag (1/s) — per-bike (windage + air-film)
 ///   τ_c   = Coulomb residual drag (N·m) — per-bike default (bearings + belt)
 ///   κ     = 1/ω_c at saturation (s/rad) — geometry, fixed across bikes,
-///           pinned so the 1000 W anchor stays meaningful when H(R) is free
+///           a prior because the spin-downs never reach ω_c
 ///   w     = mixing weight on H1 (broad) — H-shape, bike-firmware × geom
 ///   R_h1, p1 = broad Hill midpoint and sharpness — H-shape
 ///   R_h2, p2 = sharp Hill midpoint and sharpness — H-shape
@@ -59,32 +60,38 @@ import 'power_table.dart';
 /// geometry constants and aren't exposed in auto-calibration. Only β is
 /// fit per bike — α and I_crank are structurally degenerate in spin-down
 /// data (only their ratio appears in I·ω̇ = -τ), so per-bike α fitting
-/// just absorbs I_crank deviations into a wrong α. Absolute scale is the
-/// [powerScale] slider's job, against an external power meter.
+/// just absorbs I_crank deviations into a wrong α. Absolute scale comes
+/// from I_crank, and the [powerScale] slider corrects it against an
+/// external power meter or the rider's FTP measured on one.
 /// See [Coastdown.fitBrake].
 ///
-/// Anchoring chain — three independent inputs:
+/// Anchoring chain:
 ///
-///   1. [defaultICrank] = 7.55 kg·m². Geometric estimate 9.09 (ruler-
-///      measured rings, belt ratio 4.5 entering as g²), lowered 17% so
-///      indoor rides match outdoor 4iiii rides at the same heart rate
-///      and cadence. That is an HR-matched comparison, not a power-meter
-///      calibration of this bike, so I is uncertain by tens of percent.
-///      The bridge's steady-state output is P = I·λ_total(R)·ω² + τ_c·ω
-///      with λ_total and τ_c from spin-downs, so I is the only knob
-///      that sets absolute output without invalidating the fit.
+///   1. [defaultICrank] = 6.66 kg·m², the flywheel's geometry: a 5 mm
+///      aluminium disc (R = 23 cm) with a steel weight ring on each face
+///      (r = 14–18 cm × 2.03 cm and 13–17 cm × 1.52 cm; a magnet sticks
+///      to them, so they are not lead), 13.1 kg in all, times g² for the
+///      belt ratio g = 4.5. Ring heights and g are ruler-measured, and
+///      cast iron instead of steel would give 6.21, so this holds to
+///      roughly 10%. The rider's FTP cross-checks it: their 20-minute
+///      indoor effort matches their 200 W outdoor FTP at I ≈ 6.8
+///      (analysis/ftp_anchor.py).
 ///
-///   2. [defaultAlpha] and [defaultKappa] pinned so α/κ ≈ 1041 W. Under
-///      strict Wouterse α/κ is the eddy power at ω_c; at fixed R the
-///      power is (α/κ)·2x²/(1+x²), x = ω/ω_c, so the asymptote is
-///      2α/κ ≈ 2080 W. The pin is a prior loosely taken from the 1000 W
-///      spec, not a measurement: the coastdowns sit at x ≤ 0.6 and never
-///      show the roll-off, so the data cannot check κ.
+///   2. Spin-downs fix torque over inertia, so α and τ_c follow from I.
+///      The fit ran at I = 7.55 with α = 165 and τ_c = 1.1468; all three
+///      are scaled by 6.66/7.55, which leaves every fitted ω(t) and the
+///      RSS unchanged.
 ///
-///   3. H(R) shape ({w, R_h1, p1, R_h2, p2}), β, and τ_c from a global
-///      fit on 46 video-tracked spindowns spanning R = 0 to 93, with α
-///      and κ pinned to the 1041 W anchor and I_crank pinned to 7.55.
-///      RSS = 0.0188 across 51,792 samples.
+///   3. [defaultKappa] is a prior. Under strict Wouterse α/κ ≈ 918 W is
+///      the eddy power at ω_c; at fixed R the power is
+///      (α/κ)·2x²/(1+x²), x = ω/ω_c, so the asymptote is 2α/κ ≈ 1840 W.
+///      κ was pinned with α/κ near the 1000 W spec; the coastdowns sit
+///      at x ≤ 0.6 and never show the roll-off, so the data cannot
+///      check it.
+///
+///   4. H(R) shape ({w, R_h1, p1, R_h2, p2}), β, and τ_c from a global
+///      fit on 46 video-tracked spindowns spanning R = 0 to 93, with α,
+///      κ and I_crank pinned. RSS = 0.0188 across 51,792 samples.
 ///
 /// [powerScale] is a coupled absolute-scale knob: it multiplies α and
 /// I_crank by the same factor, so the eddy steady term, the residual
@@ -94,36 +101,33 @@ import 'power_table.dart';
 /// powerScale-invariant because α and I cancel — the bike's physical
 /// coastdown rate doesn't depend on what the bridge displays.
 ///
-/// The default 1.00 reflects the fully-anchored calibration above.
-/// Tune against an external power meter when available; nothing in the
-/// model claims absolute scale to better than ~10% without one.
+/// The default 1.00 is the geometry above. Tune against an external
+/// power meter or your FTP; nothing in the model claims absolute scale
+/// to better than ~10% without one.
 class Calibration {
   // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
   // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
   //
-  // α = 165 and κ = 0.1585 pin α/κ ≈ 1041 W (eddy power at ω_c; the
-  // asymptote is 2α/κ). The roll-off is never observed in the
-  // coastdowns, so this is a prior, not a fit. I_crank = 7.55 is the
-  // 9.09 geometric value scaled to match HR-matched outdoor rides on a
-  // 4iiii crank meter (Lunch_Ride.fit May 2026,
-  // Lunch_Ride_harder_effort.fit Sept 2025), which is a weak anchor;
-  // only a power meter on this bike can pin it. H, β, τ_c are fit
-  // globally at those pinned α, κ, I — RSS = 0.0188 across 51,792
-  // samples.
+  // I_crank = 6.66 is the flywheel geometry with steel rings; α and τ_c
+  // are the fit carried to that I (only torque/I is in the data). κ is
+  // a prior: α/κ ≈ 918 W is the eddy power at ω_c and the coastdowns
+  // never reach it. H, β, τ_c are fit globally at the pinned α, κ, I —
+  // RSS = 0.0188 across 51,792 samples. analysis/bridge_model.py
+  // mirrors these values.
   //
   // Residual drag splits into Coulomb (τ_c, bearings + belt) and
   // viscous (β, windage); R=0 spin-downs prefer this split by ~15×
   // in RSS over viscous-only. H(R) is a sum of two Hill curves.
-  static const double defaultAlpha = 165.0;     // N·m — peak torque amplitude (α/κ ≈ 1041 W prior)
+  static const double defaultAlpha = 145.55;    // N·m — peak torque amplitude
   static const double defaultBeta = 0.0154;     // 1/s — viscous residual drag
-  static const double defaultTauC = 1.1468;     // N·m — Coulomb residual drag
+  static const double defaultTauC = 1.0116;     // N·m — Coulomb residual drag
   static const double defaultW = 0.5994;        // mix weight on H1 (broad)
   static const double defaultRh1 = 185.036;     // broad Hill midpoint
   static const double defaultP1 = 0.669;        // broad Hill sharpness
   static const double defaultRh2 = 59.372;      // sharp Hill midpoint
   static const double defaultP2 = 2.246;        // sharp Hill sharpness
   static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation (α/κ prior, unobserved)
-  static const double defaultICrank = 7.55;     // kg·m² (geometric 9.09 × 0.83, HR-matched; soft)
+  static const double defaultICrank = 6.66;     // kg·m² — flywheel geometry, steel rings, g = 4.5
   static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
 
   /// Bounds for the Power scale slider — coupled multiplier on α and
@@ -134,16 +138,21 @@ class Calibration {
   static const double powerScaleMax = 2.0;
 
   // Storage keys are versioned so that bumping a default invalidates
-  // any value persisted under a prior version.
-  static const String _keyAlpha = 'cal.alpha.v10';
+  // any value persisted under a prior version. α and Power scale moved
+  // to new keys when I_crank went from 7.55 to 6.66; [load] converts a
+  // value tuned under the old keys so the output it gave is unchanged.
+  static const String _keyAlpha = 'cal.alpha.v11';
   static const String _keyBeta = 'cal.betaW.v10';
-  static const String _keyICrank = 'cal.iCrank.v10';
-  static const String _keyPowerScale = 'cal.powerScale.v9';
+  static const String _keyPowerScale = 'cal.powerScale.v10';
   static const String _keyPowerTable = 'cal.powerTable.v1';
+
+  static const String _keyAlphaV10 = 'cal.alpha.v10';
+  static const String _keyPowerScaleV9 = 'cal.powerScale.v9';
+  static const double _alphaV10 = 165.0;
+  static const double _iCrankV10 = 7.55;
 
   double alpha;
   double beta;
-  double iCrank;
   double powerScale;
 
   /// Measured P(R, cadence) from a reference power meter on this bike.
@@ -155,7 +164,6 @@ class Calibration {
   Calibration._({
     required this.alpha,
     required this.beta,
-    required this.iCrank,
     required this.powerScale,
     this.powerTable,
   });
@@ -164,7 +172,6 @@ class Calibration {
   Calibration.defaults()
       : alpha = defaultAlpha,
         beta = defaultBeta,
-        iCrank = defaultICrank,
         powerScale = defaultPowerScale,
         powerTable = null;
 
@@ -181,13 +188,41 @@ class Calibration {
         await prefs.remove(_keyPowerTable);
       }
     }
+    // Values saved under the old keys were relative to I_crank = 7.55.
+    // A tuned α scales with I; a tuned Power scale scales inversely,
+    // rounded to the slider's 1% step. A saved default stays a default.
+    const k = defaultICrank / _iCrankV10;
+    final alpha = await _readOrConvert(prefs, _keyAlpha, _keyAlphaV10,
+        (a) => a == _alphaV10 ? null : a * k);
+    final powerScale = await _readOrConvert(
+        prefs, _keyPowerScale, _keyPowerScaleV9,
+        (p) => p == defaultPowerScale
+            ? null
+            : ((p / k * 100).round() / 100)
+                .clamp(powerScaleMin, powerScaleMax)
+                .toDouble());
     return Calibration._(
-      alpha: prefs.getDouble(_keyAlpha) ?? defaultAlpha,
+      alpha: alpha ?? defaultAlpha,
       beta: prefs.getDouble(_keyBeta) ?? defaultBeta,
-      iCrank: prefs.getDouble(_keyICrank) ?? defaultICrank,
-      powerScale: prefs.getDouble(_keyPowerScale) ?? defaultPowerScale,
+      powerScale: powerScale ?? defaultPowerScale,
       powerTable: table,
     );
+  }
+
+  /// The value saved under [key]; failing that, [convert] applied to the
+  /// value under [oldKey], saved under [key], and the old entry dropped,
+  /// so the conversion runs once. [convert] returns null to mean "use
+  /// the default".
+  static Future<double?> _readOrConvert(SharedPreferences prefs, String key,
+      String oldKey, double? Function(double) convert) async {
+    final current = prefs.getDouble(key);
+    if (current != null) return current;
+    final old = prefs.getDouble(oldKey);
+    if (old == null) return null;
+    final converted = convert(old);
+    if (converted != null) await prefs.setDouble(key, converted);
+    await prefs.remove(oldKey);
+    return converted;
   }
 
   /// True when a measured table drives the steady-state output.
@@ -239,7 +274,7 @@ class Calibration {
   /// Used both inside [tauBrakeAt] (for the residual-drag I·β·ω term)
   /// and by [Corrector] for the KE term I·ω·dω/dt, so both the steady
   /// and the transient terms scale linearly with [powerScale].
-  double get effectiveICrank => iCrank * powerScale;
+  double get effectiveICrank => defaultICrank * powerScale;
 
   /// Brake torque + Coulomb + viscous residual drag at the crank, in N·m.
   /// Sum of the eddy-current Wouterse term, a constant Coulomb term, and
@@ -251,7 +286,7 @@ class Calibration {
     final h = _hill(r);
     final x = defaultKappa * h * omega;
     final tauEddy = (alpha * powerScale) * h * 2.0 * x / (1.0 + x * x);
-    final tauResidual = powerScale * (defaultTauC + iCrank * beta * omega);
+    final tauResidual = powerScale * (defaultTauC + defaultICrank * beta * omega);
     return tauEddy + tauResidual;
   }
 
@@ -274,13 +309,7 @@ class Calibration {
   /// output-gain knob (as it should be — it's a property of the bike).
   double lambdaLinearAt(double r) {
     final h = _hill(r);
-    return beta + 2.0 * alpha * defaultKappa * h * h / iCrank;
-  }
-
-  Future<void> setICrank(double v) async {
-    iCrank = v;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyICrank, iCrank);
+    return beta + 2.0 * alpha * defaultKappa * h * h / defaultICrank;
   }
 
   Future<void> setPowerScale(double v) async {
@@ -304,13 +333,11 @@ class Calibration {
   Future<void> resetToDefaults() async {
     alpha = defaultAlpha;
     beta = defaultBeta;
-    iCrank = defaultICrank;
     powerScale = defaultPowerScale;
     powerTable = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyAlpha);
     await prefs.remove(_keyBeta);
-    await prefs.remove(_keyICrank);
     await prefs.remove(_keyPowerScale);
     await prefs.remove(_keyPowerTable);
     // Drop any stored keys from prior calibration models so a future
@@ -351,7 +378,6 @@ class Calibration {
   bool get isAtDefaults =>
       alpha == defaultAlpha &&
       beta == defaultBeta &&
-      iCrank == defaultICrank &&
       powerScale == defaultPowerScale &&
       powerTable == null;
 }

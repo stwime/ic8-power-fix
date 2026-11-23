@@ -5,8 +5,8 @@ Background
 Strict-Wouterse spin-down fits constrain the *product* α·κ in the linear
 regime (decay rate λ = β + 2·α·κ·H(R)²/I) and the Hill shape {R_h, p}.
 α and κ individually slide along a degenerate ridge — only their product
-is observed by spin-downs. We pin α from the manufacturer's "1000 W max
-output" spec, which is more marketing claim than measurement.
+is observed by spin-downs. κ was pinned with α/κ near the manufacturer's
+"1000 W max output" spec, which is more marketing claim than measurement.
 
 This script asks: if that anchor is off by a factor c, how wrong is the
 bridge's broadcast power across the riding regime?
@@ -15,10 +15,14 @@ Method
 ------
 For each α' = c·α, set κ' = κ/c so the data-constrained product α·κ is
 preserved (i.e., the new (α', κ') pair would refit the spin-down data
-identically in the linear regime). The Hill shape, β, and I are all
+identically in the linear regime). The Hill shape, β, τ_c and I are all
 unchanged. Recompute brake power P(R, cad) = τ(R, ω)·ω with
 
-    τ(R, ω) = α'·H(R) · 2x'/(1 + x'²) + I·β·ω,    x' = κ'·H(R)·ω
+    τ(R, ω) = α'·H(R) · 2x'/(1 + x'²) + τ_c + I·β·ω,    x' = κ'·H(R)·ω
+
+The baseline is the shipped model (analysis/bridge_model.py). Scaling
+α, τ_c and I together scales every row by the same factor, so the %
+deviations do not depend on the inertia.
 
 and compare to the baseline c=1 across a (R, cad) grid that brackets
 typical riding conditions and the high-R corner the README flags.
@@ -33,38 +37,29 @@ Console table of % deviation at representative riding points.
 from __future__ import annotations
 
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-OUT_DIR = Path(__file__).resolve().parent.parent / "analysis_out"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from analysis.bridge_model import (  # noqa: E402
+    ALPHA, BETA, I_CRANK, KAPPA, TAU_C, hill,
+)
+
+OUT_DIR = ROOT / "analysis_out"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Published fit (README + analysis/fit_wouterse.py).
-ALPHA = 165.0      # N·m   (anchored to manufacturer's 1000 W spec)
-KAPPA = 0.160      # s/rad
-R_H = 72.9
-P_HILL = 1.27
-BETA = 0.0389      # 1/s  (residual drag)
-I_CRANK = 9.09     # kg·m²
-
-
-def hill(R: np.ndarray) -> np.ndarray:
-    R = np.asarray(R, dtype=float)
-    out = np.zeros_like(R)
-    pos = R > 0
-    out[pos] = R[pos]**P_HILL / (R[pos]**P_HILL + R_H**P_HILL)
-    return out
 
 
 def brake_power(R, cad_rpm, alpha, kappa):
-    """P_brake = τ_eddy·ω + I·β·ω². R, cad_rpm broadcastable."""
+    """P_brake = τ·ω with α and κ swapped in. R, cad_rpm broadcastable."""
     omega = np.asarray(cad_rpm, dtype=float) * 2 * math.pi / 60
-    H = hill(np.asarray(R, dtype=float))
+    H = hill(R)
     x = kappa * H * omega
     tau_eddy = alpha * H * 2.0 * x / (1.0 + x * x)
-    tau_resid = I_CRANK * BETA * omega
+    tau_resid = TAU_C + I_CRANK * BETA * omega
     return (tau_eddy + tau_resid) * omega
 
 
@@ -115,7 +110,7 @@ def plot_curves(out_path):
 
     fig.suptitle(
         "Sensitivity of bridge power to α anchor, with α·κ pinned by spin-down data\n"
-        f"baseline α={ALPHA:g} N·m  (≈ 1000 W spec),  κ={KAPPA:g} s/rad",
+        f"baseline α={ALPHA:g} N·m (shipped),  κ={KAPPA:g} s/rad",
         fontsize=11, weight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(out_path, dpi=130)
@@ -145,7 +140,7 @@ def report_table():
     print("-" * len(header))
     for R, cad in points:
         omega = cad * 2 * math.pi / 60
-        x = KAPPA * float(hill(np.array([R]))[0]) * omega
+        x = KAPPA * hill(R) * omega
         row = [f"{R:>4} {cad:>4} {omega:>5.2f} {x:>6.3f} "]
         for c in multipliers:
             P = float(brake_power(R, cad,
@@ -154,12 +149,12 @@ def report_table():
         print(" ".join(row))
 
     print()
-    print("Same points, % deviation from baseline (α=165)")
+    print(f"Same points, % deviation from baseline (α={ALPHA:g})")
     print(header)
     print("-" * len(header))
     for R, cad in points:
         omega = cad * 2 * math.pi / 60
-        x = KAPPA * float(hill(np.array([R]))[0]) * omega
+        x = KAPPA * hill(R) * omega
         baseline = float(brake_power(R, cad, ALPHA, KAPPA))
         row = [f"{R:>4} {cad:>4} {omega:>5.2f} {x:>6.3f} "]
         for c in multipliers:

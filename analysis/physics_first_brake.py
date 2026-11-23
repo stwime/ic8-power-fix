@@ -58,11 +58,15 @@ from __future__ import annotations
 
 import csv
 import math
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from analysis.bridge_model import ALPHA, I_CRANK, KAPPA  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
@@ -80,7 +84,6 @@ A_MAG = 0.0125          # m, magnet radius (2.5 cm dia, lower bound)
 L_MAG = 0.0045          # m, magnet axial length (4.5 mm, mid-range)
 GAP_AXIAL = 0.003       # m, magnet face to disk face (constant in R)
 GEAR = 4.5              # ω_flywheel / ω_crank
-I_CRANK = 9.09          # kg·m², effective inertia at crank (matches fit_wouterse.py)
 
 # Magnet center radial position (m) at R=0 and R=100, per pair.
 # At R=0:  outer edge 1 mm beyond disk OD → center at R_DISK + A_MAG + 1 mm.
@@ -184,9 +187,11 @@ def physics_2alpha_kappa(B_disk: float, G_max: float,
     return GEAR * GEAR * SIGMA_AL * T_DISK * B_disk * B_disk * G_max * C_coupling
 
 
-# Fitted 2ακ from analysis/fit_wouterse.py (α=165, κ=0.160). Reference
-# point for any geometric prediction.
-FITTED_2AK = 2.0 * 165.0 * 0.160    # 52.8 N·m·s/rad
+# Fitted 2ακ of the shipped model (analysis/bridge_model.py, from
+# analysis/fit_wouterse.py). Reference point for any geometric prediction.
+# It scales with I_CRANK (only 2ακ/I is in the spin-downs), so comparing a
+# geometric 2ακ with it also tests the inertia.
+FITTED_2AK = 2.0 * ALPHA * KAPPA    # N·m·s/rad
 
 
 def compare_to_fit(label: str, two_ak: float) -> str:
@@ -278,24 +283,21 @@ def main():
     # Open loop (no yoke): pinned B estimate.
     # Yoked: closed-loop circuit B for several magnet lengths.
     # Coupling factor C: 1.0 = naive superposition, 1.3 = adjacent anti-polar.
-    print("Geometric predictions of 2ακ at H=1, ratio to fitted 52.8:")
+    print(f"Geometric predictions of 2ακ at H=1, ratio to fitted {FITTED_2AK:.1f}:")
     print("-" * 76)
 
-    print(compare_to_fit(
-        "open loop  B=0.40T  C=1.0",
-        physics_2alpha_kappa(B_gap_open(0.40), G_max, 1.0)))
-    print(compare_to_fit(
-        "open loop  B=0.45T  C=1.0",
-        physics_2alpha_kappa(B_gap_open(0.45), G_max, 1.0)))
-    print(compare_to_fit(
-        "open loop  B=0.50T  C=1.0",
-        physics_2alpha_kappa(B_gap_open(0.50), G_max, 1.0)))
+    open_loop = []
+    for b_open in (0.40, 0.45, 0.50):
+        two_ak = physics_2alpha_kappa(B_gap_open(b_open), G_max, 1.0)
+        open_loop.append(two_ak / FITTED_2AK)
+        print(compare_to_fit(f"open loop  B={b_open:.2f}T  C=1.0", two_ak))
     print()
 
     # Measured magnet dimensions: 2.5–3 cm dia, 4–5 mm thick. Sweep both.
     print("Yoked, measured-dimension sweep (anti-polar pairs + steel yoke):")
     print(f"  {'dia (cm)':>9}  {'thick (mm)':>11}  {'B (T)':>6}  "
           f"{'2ακ':>7}  ratio")
+    yoked = []
     for dia_cm in (2.5, 2.75, 3.0):
         for L_m_mm in (4.0, 4.5, 5.0):
             a = dia_cm / 2.0 / 100.0
@@ -310,6 +312,7 @@ def main():
             B = B_gap_yoked(L_m)
             two_ak = physics_2alpha_kappa(B, G_max_local, 1.0)
             ratio = two_ak / FITTED_2AK
+            yoked.append(ratio)
             print(f"  {dia_cm:>9.2f}  {L_m_mm:>11.1f}  {B:>6.3f}  "
                   f"{two_ak:>7.1f}  {ratio:>5.2f}×")
     print()
@@ -329,28 +332,25 @@ def main():
 
     print("Takeaway")
     print("-" * 76)
-    print("  Open-loop (no yoke) predictions sit at ~0.5–0.75× of the fitted")
+    print(f"  Open-loop (no yoke) predictions sit at {min(open_loop):.2f}–"
+          f"{max(open_loop):.2f}× of the fitted")
     print("  2ακ. The brake is too strong for a free-air pair, so a yoke or")
     print("  equivalent flux return must be doing real work — consistent with")
     print("  the observed steel bridge.")
     print()
+    lo, hi = min(yoked), max(yoked)
     print("  Closed-loop (yoked, anti-polar) with the measured magnet")
     print("  dimensions — 2.5–3 cm diameter, 4–5 mm thick — predicts 2ακ")
-    print("  between 0.8× and 1.6× the fitted 52.8. With the lower-bound")
-    print("  diameter (2.5 cm) and 4.5 mm thickness, the central prediction")
-    print("  is ≈ 1.0× — geometry, magnet circuit, and data all agree to")
-    print("  within model-level precision.")
+    print(f"  between {lo:.2f}× and {hi:.2f}× the fitted {FITTED_2AK:.1f}.")
     print()
-    print("  Remaining uncertainty in the prediction (factor ~1.5) is")
-    print("  dominated by magnet-diameter range (a² in G_max). σ_Al alloy")
-    print("  vs. pure (~30%), yoke imperfection, and constructive coupling")
-    print("  between pairs all sit at the same order.")
-    print()
-    print("  Bottom line: the geometric calc with the measured brake")
-    print("  dimensions and a steel yoke reproduces the fitted α to within")
-    print("  the noise floor of the model. That genuinely is an independent")
-    print("  anchor — the 1000 W spec, the geometric α/κ, and the fitted")
-    print("  data triangulate consistently.")
+    print("  The fitted 2ακ scales with the inertia (spin-downs see only")
+    print("  2ακ/I), so these ratios are also crank inertias in units of the")
+    print(f"  shipped {I_CRANK} kg·m²: {lo * I_CRANK:.1f} to {hi * I_CRANK:.1f} kg·m².")
+    print("  The prediction is uncertain by a factor ~1.5, dominated by the")
+    print("  magnet-diameter range (a² in G_max); σ_Al alloy vs. pure (~30%),")
+    print("  yoke imperfection, and coupling between pairs sit at the same")
+    print("  order. So the magnet circuit brackets the flywheel geometry")
+    print("  rather than pinning it.")
     print()
 
     # Plot λ(R): data (if available) + physics predictions across

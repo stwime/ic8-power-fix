@@ -163,34 +163,39 @@ scale that makes it equal your FTP.
 
 Set Settings, Power scale to the printed percentage.
 
-## Cross-check: flywheel geometry
+## Where the default comes from: flywheel geometry
 
-The crank inertia is g² times the flywheel's, with g the flywheel turns
-per crank turn. On the reference bike the flywheel is a 5 mm aluminium
-disc of radius 23 cm with a weight ring on each face, ruler-measured at
-radius 14 to 18 cm by 2.03 cm and 13 to 17 cm by 1.52 cm. The ring
-material sets the answer:
+The app's default scale is the flywheel's inertia. The crank inertia is
+g² times the flywheel's, with g the flywheel turns per crank turn. On
+the reference bike the flywheel is a 5 mm aluminium disc of radius
+23 cm with a weight ring on each face, ruler-measured at radius 14 to
+18 cm by 2.03 cm and 13 to 17 cm by 1.52 cm. The ring material sets the
+answer:
 
 | Rings | Flywheel | Crank inertia at g = 4.5 | Power scale |
 | --- | --- | --- | --- |
-| lead | 18.0 kg | 9.09 kg·m² | 120% |
-| steel | 13.1 kg | 6.66 kg·m² | 88% |
-| cast iron | 12.2 kg | 6.21 kg·m² | 82% |
+| lead | 18.0 kg | 9.09 kg·m² | 136% |
+| steel (shipped) | 13.1 kg | 6.66 kg·m² | 100% |
+| cast iron | 12.2 kg | 6.21 kg·m² | 93% |
 
-Two checks need no tools. A fridge magnet sticks to steel and iron and
-not to lead; try it on the rings, away from the brake magnets at the
-rim. With a mark on the flywheel, turn the crank 10 times and count
-flywheel turns to the nearest eighth: that gives g to about 0.3%, and g
-enters squared. The ring heights are ruler upper bounds with chamfered
-edges, and the hub and pulleys are left out, so this cross-checks the
-scale from A, B or C rather than replacing it. Power scale is the crank
-inertia divided by 7.55.
+A fridge magnet sticks to the reference bike's rings, away from the
+brake magnets at the rim, so they are not lead. It does not tell steel
+from cast iron; the app ships steel, which the threshold check in
+Option C matches within 2%. Power scale is the crank inertia divided by
+6.66.
+
+To check your own unit, try the magnet, and with a mark on the flywheel
+turn the crank 10 times and count flywheel turns to the nearest eighth:
+that gives g to about 0.3%, and g enters squared. The ring heights are
+ruler upper bounds with chamfered edges, and the hub and pulleys are
+left out, so the geometry holds to roughly 10%; A, B and C measure the
+scale directly and take precedence.
 
 ## What the numbers mean afterwards
 
 | Result | Action |
 | --- | --- |
 | Ratio flat, mean within 5% of 1 | Nothing to change. |
-| Ratio flat, mean elsewhere, or Option B or C gives a different scale | Set the Power scale slider to the ratio, to `s` or to the printed percentage, or set `I_CRANK` in `analysis/fit_wouterse.py` and `defaultICrank` in `bridge/lib/physics/calibration.dart` to the implied inertia. |
+| Ratio flat, mean elsewhere, or Option B or C gives a different scale | Set the Power scale slider to the ratio, to `s` or to the printed percentage. To change the shipped default instead, multiply the inertia, α and τ_c by that factor together in `analysis/bridge_model.py`, `analysis/fit_wouterse.py` and the `Calibration` defaults in `bridge/lib/physics/calibration.dart`; spin-downs fix only their ratios, so changing one alone breaks the fit. |
 | Ratio trends with R | Load the table in the app. The spin-down model stays as documentation of the shape it predicted. |
 | Warm cells lower than cold | Note the size. A thermal term is the next model change if it exceeds the scatter. |

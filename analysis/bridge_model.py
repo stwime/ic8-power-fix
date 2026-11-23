@@ -17,33 +17,38 @@ import math
 
 import numpy as np
 
-ALPHA = 165.0        # N·m, eddy peak torque amplitude (α/κ ≈ 1041 W prior)
+# Spin-downs fix torque over inertia, so α, τ_c and I_CRANK only matter
+# together: scaling all three by one factor leaves every fitted ω(t)
+# unchanged. I_CRANK is the flywheel geometry with steel rings (see
+# README, "Inertia"), and α and τ_c are the spin-down fit carried to it.
+ALPHA = 145.55       # N·m, eddy peak torque amplitude
 BETA = 0.0154        # 1/s, viscous residual drag
-TAU_C = 1.1468       # N·m, Coulomb residual drag
+TAU_C = 1.0116       # N·m, Coulomb residual drag
 W = 0.5994           # mix weight on H1
 R_H1 = 185.036
 P1 = 0.669
 R_H2 = 59.372
 P2 = 2.246
 KAPPA = 0.1585       # s/rad
-I_CRANK = 7.55       # kg·m² at the crank
+I_CRANK = 6.66       # kg·m² at the crank
 
 
-def _hill(r: float, r_h: float, p: float) -> float:
+def _hill(r, r_h: float, p: float):
     rp = r ** p
     return rp / (rp + r_h ** p)
 
 
-def hill(r: float) -> float:
-    """H(R): sum of two Hill curves, zero at R=0, saturating below 1."""
-    if r <= 0:
-        return 0.0
-    return W * _hill(r, R_H1, P1) + (1.0 - W) * _hill(r, R_H2, P2)
+def hill(r):
+    """H(R): sum of two Hill curves, zero at R ≤ 0, saturating below 1.
+    Works on floats and numpy arrays."""
+    r = np.maximum(np.asarray(r, dtype=float), 0.0)
+    h = W * _hill(r, R_H1, P1) + (1.0 - W) * _hill(r, R_H2, P2)
+    return h if h.ndim else float(h)
 
 
-def tau_brake(r: float, omega: float, power_scale: float = 1.0,
-              i_crank: float = I_CRANK) -> float:
-    """Brake + residual torque at the crank, N·m, as the app computes it."""
+def tau_brake(r, omega, power_scale: float = 1.0, i_crank: float = I_CRANK):
+    """Brake + residual torque at the crank, N·m, as the app computes it.
+    Works on floats and numpy arrays."""
     h = hill(r)
     x = KAPPA * h * omega
     tau_eddy = ALPHA * power_scale * h * 2.0 * x / (1.0 + x * x)
@@ -51,8 +56,9 @@ def tau_brake(r: float, omega: float, power_scale: float = 1.0,
     return tau_eddy + tau_residual
 
 
-def brake_power(r: float, cadence_rpm: float, power_scale: float = 1.0) -> float:
-    """Steady-state power in W at dial position r and crank cadence."""
+def brake_power(r, cadence_rpm, power_scale: float = 1.0):
+    """Steady-state power in W at dial position r and crank cadence.
+    Works on floats and numpy arrays."""
     omega = cadence_rpm * math.pi / 30.0
     return tau_brake(r, omega, power_scale) * omega
 

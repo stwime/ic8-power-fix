@@ -21,7 +21,10 @@ What it does
      the model.
   5. Writes power_table.json in the format bridge/lib/physics/power_table.dart
      reads. Cells the session did not cover are filled from the model times
-     the nearest measured ratio and listed under "filled" so you know.
+     the nearest measured ratio and listed under "filled" so you know. The
+     table's inertia for the acceleration term is the model's times the
+     mean ratio: spin-downs fix torque over inertia, so a brake that reads
+     k times the model means a flywheel k times heavier.
 
 Usage
   python analysis/fit_reference.py --bike session.csv --ref ride.fit \
@@ -255,7 +258,7 @@ def report(cells):
             "span": float(span), "scatter": scatter}
 
 
-def build_table(cells, source):
+def build_table(cells, source, mean_ratio):
     r_grid = sorted({c["r"] for c in cells})
     cad_grid = sorted({c["cadence_rpm"] for c in cells})
     if len(r_grid) < 2 or len(cad_grid) < 2:
@@ -283,7 +286,7 @@ def build_table(cells, source):
         "r": r_grid,
         "cadence_rpm": cad_grid,
         "watts": watts,
-        "i_crank": I_CRANK,
+        "i_crank": round(I_CRANK * mean_ratio, 3),
         "filled": filled,
     }
 
@@ -379,7 +382,7 @@ def main():
 
     stats = report(cells)
     source = args.source or f"{args.ref.name}, {datetime.now():%Y-%m-%d}"
-    table = build_table(cells, source)
+    table = build_table(cells, source, stats["mean_ratio"] if stats else 1.0)
     (args.out / "power_table.json").write_text(table_json(table))
     if stats:
         (args.out / "summary.json").write_text(json.dumps(stats, indent=1))

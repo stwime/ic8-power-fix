@@ -56,8 +56,8 @@ so τ_max(R)·ω_c(R) = α/κ — a single constant set by disc geometry
 
     τ_total(R, ω) = τ_c + I·β·ω + 2·α·κ·H(R)²·ω / (1 + (κ·H(R)·ω)²)
 
-Eight free parameters total — {α, w, R_h1, p1, R_h2, p2, κ, β, τ_c}
-minus α pinned to the 1000 W spec.
+Seven free parameters: {w, R_h1, p1, R_h2, p2, β, τ_c}, with α, κ and
+I pinned (see the constants below).
 
 Fit
 ---
@@ -84,18 +84,14 @@ ALL_SPINDOWNS_CSV = ROOT / "data/calibration/all_spindowns.csv"
 OUT_DIR = ROOT / "data/calibration/wouterse_fit"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-I_CRANK = 7.55  # kg·m² (effective, at the crank). Geometric estimate
-                # 9.09 (ruler-measured rings, belt ratio 4.5 entering
-                # as g²), scaled by 0.83 so indoor rides match outdoor
-                # 4iiii rides at the same heart rate and cadence
-                # (Lunch_Ride.fit, May 2026; Lunch_Ride_harder_effort
-                # .fit, Sept 2025). That is HR matching, not a power-
-                # meter calibration of this bike: treat I as uncertain
-                # by tens of percent. I is the only knob in
-                # P = I·λ_total(R)·ω² + τ_c·ω that sets absolute output
-                # without invalidating the spin-down fit: λ_total(R) is
-                # fit directly from the data, so any adjustment to α,
-                # κ, or H breaks the fit by the size of the adjustment.
+I_CRANK = 6.66  # kg·m² (effective, at the crank). Flywheel geometry: a
+                # 5 mm aluminium disc (R = 23 cm) with a steel ring on
+                # each face (r = 14–18 cm × 2.03 cm, 13–17 cm × 1.52 cm;
+                # a magnet sticks, so not lead), times g² for the belt
+                # ratio g = 4.5. Ruler-measured, so good to roughly 10%.
+                # Spin-downs fix only torque/I: α, τ_c and I scale
+                # together without changing any fitted ω(t), so I sets
+                # the absolute output and the fit carries α and τ_c.
 
 # α is pinned, not fit. The data only constrains the product 2ακ·H²/I
 # plus the H(R) shape — α and κ slide along a degenerate ridge unless
@@ -107,20 +103,18 @@ I_CRANK = 7.55  # kg·m² (effective, at the crank). Geometric estimate
 # (α/κ → ∞, model degenerates into power-law). α has to be set by an
 # external prior.
 #
-# Pin: α = 165 N·m, κ = 0.1585 s/rad, i.e. α/κ ≈ 1041 W. Note what that
-# number is: the eddy power at ω_c. At fixed R the power is
-# (α/κ)·2x²/(1+x²) with x = ω/ω_c, so the asymptote is 2α/κ ≈ 2080 W.
-# The 1000 W manufacturer spec was used as a loose prior for α/κ; it is
-# not a measurement and the coastdowns (x ≤ 0.6) cannot test it. The
-# absolute-scale adjustment is absorbed into I_CRANK (9.09 → 7.55, see
-# the I_CRANK comment above). This preserves the spin-down fit
-# integrity — λ_total(R) is measured directly from the data and the
-# optimizer rescales H(R) to keep 2ακH²/I matched at the new I.
+# Pin: α = 145.55 N·m, κ = 0.1585 s/rad, i.e. α/κ ≈ 918 W. Note what
+# that number is: the eddy power at ω_c. At fixed R the power is
+# (α/κ)·2x²/(1+x²) with x = ω/ω_c, so the asymptote is 2α/κ ≈ 1840 W.
+# κ was pinned with α/κ near the 1000 W manufacturer spec when I was
+# 7.55 (α = 165); α then moved with I to 6.66, which is an exact symmetry
+# of the fit. The spec is not a measurement and the coastdowns (x ≤ 0.6)
+# cannot test κ.
 #
 # See analysis/physics_first_brake.py for the brake-geometry derivation
 # and analysis/fit_h_alternatives.py for the comparison that picked
 # the two-Hill form over Richards (3-param) and 8-knot monotone spline.
-ALPHA_PINNED = 165.0
+ALPHA_PINNED = 145.55
 KAPPA_PINNED = 0.1585
 
 
@@ -242,7 +236,7 @@ def run_fit(segments, x0=None):
             80.0,    # R_h2   (broad/front Hill midpoint)
             2.00,    # p2     (broad Hill sharpness)
             0.022,   # β      (1/s)
-            1.20,    # τ_c    (N·m)
+            1.06,    # τ_c    (N·m)
         ])
     lo = np.array([0.0,  5.0,   0.5,  5.0,   0.5,  0.0,  0.0])
     hi = np.array([1.0,  500.,  10.,  500.,  10.,  0.5,  20.0])

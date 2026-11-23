@@ -49,11 +49,11 @@ class CoastdownPoint {
 }
 
 /// Result of fitting Wouterse linear-regime
-///     λ_eff(R) = β + (2ακ/I) · H(R)²   with H(R) = R^p / (R^p + R_h^p)
+///     λ_eff(R) = β + (2ακ/I) · H(R)²   with H(R) = [Calibration.hillAt]
 /// across multiple [CoastdownPoint]s. Everything except β is held fixed at
-/// the [Calibration] defaults: the shape (p, R_h, κ) is firmware-mapping +
-/// geometry, the inertia I is direct geometry, and α is anchored to the
-/// manufacturer's 1000 W max-output spec via α/κ = 1020 W. Per-bike
+/// the [Calibration] defaults: the shape (H, κ) is firmware-mapping +
+/// geometry, the inertia I is flywheel geometry, and α is the reference
+/// spin-down fit carried to that I. Per-bike
 /// spin-downs structurally can't separate α from I (only the ratio shows
 /// up in I·ω̇ = -τ), so fitting α from coastdowns just absorbs I_crank
 /// deviations into a wrong α. β is the one quantity that genuinely varies
@@ -342,8 +342,8 @@ class CoastdownDetector {
 ///
 /// User coastdowns at typical cadences sit well below the brake's
 /// critical ω, so the bell-curve term collapses to linear damping with
-/// effective decay rate λ_eff(R). With α pinned by the 1000 W max-output
-/// spec and I_crank pinned by flywheel geometry — both shared across all
+/// effective decay rate λ_eff(R). With I_crank pinned by flywheel geometry
+/// and α by the reference fit at that I — both shared across all
 /// IC8/IC4/C6/C7 units — only β has a physical reason to vary unit-to-unit
 /// and isn't degenerate with anything else. The fitter subtracts the
 /// model's H(R)² contribution and recovers β as a single weighted mean
