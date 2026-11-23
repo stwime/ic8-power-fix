@@ -56,6 +56,35 @@ def tau_brake(r, omega, power_scale: float = 1.0, i_crank: float = I_CRANK):
     return tau_eddy + tau_residual
 
 
+R_JUMP = 3   # Constants.rJump
+
+
+def smooth_resistance(r):
+    """The dial position the app uses for each sample, as
+    bridge/lib/physics/resistance_filter.dart computes it: a change of
+    R_JUMP or more is taken at once, a smaller one when the next sample
+    is off in the same direction. NaN samples (gaps in a log) give NaN
+    and leave the filter as it was."""
+    out = np.full(len(r), np.nan)
+    held, pending = None, 0
+    for i, v in enumerate(r):
+        if not np.isfinite(v):
+            continue
+        v = int(v)
+        if held is None:
+            held = v
+        d = v - held
+        sign = (d > 0) - (d < 0)
+        if d == 0:
+            pending = 0
+        elif abs(d) >= R_JUMP or sign == pending:
+            held, pending = v, 0
+        else:
+            pending = sign
+        out[i] = held
+    return out
+
+
 def brake_power(r, cadence_rpm, power_scale: float = 1.0):
     """Steady-state power in W at dial position r and crank cadence.
     Works on floats and numpy arrays."""

@@ -45,7 +45,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from analysis.bridge_model import I_CRANK, brake_power  # noqa: E402
+from analysis.bridge_model import I_CRANK, brake_power, smooth_resistance  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -159,16 +159,6 @@ def find_offset(bike, ref, search_s=120.0):
 # ---------------------------------------------------------------------------
 # Steady-state selection and binning.
 # ---------------------------------------------------------------------------
-
-def median_filter(x, win=5):
-    """Rolling median over the trailing `win` samples, as the app does for R."""
-    out = np.array(x, dtype=float)
-    for i in range(len(x)):
-        w = x[max(0, i - win + 1):i + 1]
-        w = w[np.isfinite(w)]
-        out[i] = np.median(w) if len(w) else np.nan
-    return out
-
 
 def steady_mask(r, cad, win=5, r_tol=1, cad_tol=4.0, accel_tol=3.0):
     """True where R has been constant (within the dial's ±1 jitter) and
@@ -367,7 +357,7 @@ def main():
     if mask.sum() == 0:
         sys.exit("No steady overlap between the two recordings. Check --offset.")
 
-    r, cad = median_filter(bike["r"])[mask], bike["cad"][mask]
+    r, cad = smooth_resistance(bike["r"])[mask], bike["cad"][mask]
     p_model = np.array([brake_power(a, b) for a, b in zip(r, cad)])
     cells = bin_cells(r, cad, p_ref[mask], bike["p_bike"][mask], p_model,
                       args.r_step, args.cad_step, args.min_samples)

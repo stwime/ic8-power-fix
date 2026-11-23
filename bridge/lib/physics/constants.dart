@@ -8,8 +8,10 @@ class Constants {
   /// IC8 hard mechanical cap; the brake locks the crank, no useful info.
   static const int rCap = 100;
 
-  /// Median-filter window for the noisy R sensor (jitters ±1 even untouched).
-  static const int rSmoothWindow = 5;
+  /// Smallest R change taken at once. Untouched, the dial reading flickers
+  /// by 1 or 2 for single samples; a turn moves it 3 or more per sample.
+  /// See [ResistanceFilter].
+  static const int rJump = 3;
 
   /// Central-difference window for ω̇ (samples). Smoothed lightly to reduce
   /// 1Hz quantization noise; keeps responsiveness for sprint ramps.

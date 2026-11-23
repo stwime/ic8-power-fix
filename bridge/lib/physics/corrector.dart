@@ -2,12 +2,12 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'calibration.dart';
 import 'constants.dart';
+import 'resistance_filter.dart';
 
-/// Streaming version of analysis/correct_power.py.
-///
-/// Feed it 1Hz samples from the IC8 (R, cadence in rpm, timestamp). It maintains
-/// rolling state to compute median-filtered R and a 3-sample central difference
-/// for dω/dt, and returns corrected power per sample.
+/// Rider power from the IC8's 1 Hz samples (R, cadence in rpm, timestamp).
+/// Keeps the dial position through [ResistanceFilter] and dω/dt from a
+/// 3-sample difference, and returns brake power plus the flywheel term
+/// I·ω·dω/dt per sample. analysis/bridge_model.py mirrors the physics.
 class Corrector {
   /// Live calibration. Read each push so a settings change retunes power
   /// instantly without restarting the BLE pipeline.
@@ -15,7 +15,7 @@ class Corrector {
 
   Corrector(this.calibration);
 
-  final Queue<int> _rBuf = Queue();
+  final ResistanceFilter _rFilter = ResistanceFilter();
   final Queue<({double t, double omega})> _omegaBuf = Queue();
 
   /// Most recent corrected outputs (for UI / logging).
@@ -48,13 +48,7 @@ class Corrector {
     final double cadForPhysics =
         capWithoutCsc ? Constants.cadCap : cadenceRpm;
 
-    // Slide R buffer for median filter
-    _rBuf.addLast(resistance);
-    while (_rBuf.length > Constants.rSmoothWindow) {
-      _rBuf.removeFirst();
-    }
-    final List<int> rSorted = _rBuf.toList()..sort();
-    final double rSmooth = rSorted[rSorted.length ~/ 2].toDouble();
+    final double rDial = _rFilter.push(resistance).toDouble();
 
     final double omega = cadForPhysics * math.pi / 30.0;
 
@@ -83,7 +77,7 @@ class Corrector {
     }
 
     // Steady term: measured table when one is loaded, physics otherwise.
-    final double pSteady = calibration.steadyPowerAt(rSmooth, cadForPhysics);
+    final double pSteady = calibration.steadyPowerAt(rDial, cadForPhysics);
     // KE uses the same inertia as the steady source: effective I_crank on
     // the physics path so the powerScale slider scales both terms
     // together, the table's own I on the measured path.

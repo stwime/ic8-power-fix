@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 from analysis.bridge_model import (  # noqa: E402
     I_CRANK,
     ic8_broadcast_power,
+    smooth_resistance,
     tau_brake,
 )
 FIG_DIR = ROOT / "docs" / "figures"
@@ -112,10 +113,7 @@ def plot_indoor_surge():
     t, cad, r = _read_window(SPRINT_CSV, 33.0, 50.5)
     omega = cad * np.pi / 30.0
 
-    # Median filter on R to mirror corrector's 5-sample window.
-    r_smooth = np.array([
-        int(np.median(r[max(0, i - 4):i + 1])) for i in range(len(r))
-    ])
+    r_dial = smooth_resistance(r)
     # 3-sample central diff on omega — same window the corrector uses.
     omega_dot = np.zeros_like(omega)
     for i in range(len(omega)):
@@ -130,7 +128,7 @@ def plot_indoor_surge():
     for i in range(len(omega)):
         if cad[i] <= 0:
             continue
-        p_steady[i] = bridge_steady(r_smooth[i], omega[i])
+        p_steady[i] = bridge_steady(r_dial[i], omega[i])
         p_ke[i] = I_CRANK * POWER_SCALE * omega[i] * omega_dot[i]
     p_total = np.maximum(p_steady + p_ke, 0.0)
 

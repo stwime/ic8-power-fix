@@ -10,7 +10,7 @@ void main() {
     test('steady state matches τ_brake(R, ω)·ω formula', () {
       final cal = Calibration.defaults();
       final c = Corrector(cal);
-      // Warm up the median filter and ω-buffer at constant R, constant cad.
+      // Warm up the ω-buffer at constant R, constant cad.
       const r = 30;
       const cad = 80.0;
       double? p;
@@ -110,21 +110,23 @@ void main() {
       expect(p, isNull);
     });
 
-    test('R median filter rejects single-sample jitter', () {
+    test('a dial turn moves power in the same sample; a flicker does not',
+        () {
       final cal = Calibration.defaults();
       final c = Corrector(cal);
-      // Settle at R=30
       for (int i = 0; i < 5; i++) {
         c.push(timestampS: i.toDouble(), resistance: 30, cadenceRpm: 80,
                csCadenceAvailable: true, cadenceRpmFtms: 80);
       }
-      // One outlier at R=80 — median of last 5 stays near 30
-      final p = c.push(timestampS: 5, resistance: 80, cadenceRpm: 80,
-                       csCadenceAvailable: true, cadenceRpmFtms: 80);
       const omega = 80.0 * math.pi / 30.0;
-      final expected = cal.brakePowerAt(30.0, omega);
-      expect(p, isNotNull);
-      expect(p!, closeTo(expected, 1.0));
+      final flicker = c.push(timestampS: 5, resistance: 31, cadenceRpm: 80,
+                             csCadenceAvailable: true, cadenceRpmFtms: 80);
+      expect(flicker!, closeTo(cal.brakePowerAt(30.0, omega), 1e-9));
+      c.push(timestampS: 6, resistance: 30, cadenceRpm: 80,
+             csCadenceAvailable: true, cadenceRpmFtms: 80);
+      final turned = c.push(timestampS: 7, resistance: 60, cadenceRpm: 80,
+                            csCadenceAvailable: true, cadenceRpmFtms: 80);
+      expect(turned!, closeTo(cal.brakePowerAt(60.0, omega), 1e-9));
     });
 
     test('corrected power is non-negative even on aggressive deceleration', () {
