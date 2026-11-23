@@ -46,6 +46,11 @@ flutter pub get
 flutter run --release            # connect a phone via USB first; --release so the app keeps running after you unplug
 ```
 
+To update the app later, use `flutter run --release` again, which
+installs over the old copy. Don't use `flutter install`: it uninstalls
+the old copy first, and on iOS that deletes your saved settings (Power
+scale, auto-calibration, measured power table, device name).
+
 The app starts advertising **"IC Bike (corrected)"** as soon as
 Bluetooth is on; the tile under the status line says whether it is
 visible and how many apps have paired. Pair your training app (on a

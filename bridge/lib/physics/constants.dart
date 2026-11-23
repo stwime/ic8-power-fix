@@ -1,5 +1,5 @@
 /// Protocol-level constants (BLE limits, filter windows). For tunable physics
-/// constants (a_brake, b_friction, I_crank), see [Calibration].
+/// constants (α, β, τ_c, I_crank, Power scale), see [Calibration].
 class Constants {
   /// FTMS BLE caps cadence at 125 rpm (uint16 at 0.5 rpm); treat ≥124 as suspect
   /// and prefer CSC-derived cadence in that case.
