@@ -1,4 +1,5 @@
-"""Regenerate the README figures that depend on bridge defaults.
+"""Regenerate the README and docs/physics.md figures that depend on
+bridge defaults.
 
 Run from repo root: python analysis/plot_readme_figures.py
 

@@ -10,6 +10,14 @@ flutter run        # connect a phone first
 flutter test       # unit tests live in test/
 ```
 
+## Vendored BLE plugin
+
+The Darwin half of the `bluetooth_low_energy` plugin is vendored in
+`packages/` with one patch: it advertises 16-bit Bluetooth SIG UUIDs as
+16-bit (upstream issue #137). Unpatched, FTMS and Cycling Power don't
+fit the 31-byte advertisement and iOS moves them to the overflow area
+that training apps don't scan.
+
 ## iOS signing
 
 The repo ships with no Apple Developer team configured. Before

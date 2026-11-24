@@ -19,8 +19,8 @@ import numpy as np
 
 # Spin-downs fix torque over inertia, so C_EDDY, TAU_C and I_CRANK only
 # matter together: scaling all three by one factor leaves every fitted ω(t)
-# unchanged. I_CRANK is the flywheel geometry with steel rings (see README,
-# "Inertia"), and C_EDDY and TAU_C are the spin-down fit
+# unchanged. I_CRANK is the flywheel geometry with steel rings (see
+# docs/physics.md, "Inertia"), and C_EDDY and TAU_C are the spin-down fit
 # (analysis/fit_spindowns.py) at that I.
 C_EDDY = 43.7682     # N·m·s/rad, brake damping at the crank at H = 1
 BETA = 0.013854      # 1/s, viscous residual drag
@@ -95,7 +95,7 @@ def brake_power(r, cadence_rpm, power_scale: float = 1.0):
 # ln k = a + b·ln R + c·ln²R. Fit on 293 steady 1 Hz samples from a BLE
 # log of resistance holds (R 10 to 96, 31 to 123 rpm). At fixed R the
 # cadence exponent is 1.60; the fit is within 2.5% of the broadcast value
-# in every 10-wide R band (sample scatter 7%). The README quotes the
+# in every 10-wide R band (sample scatter 7%). docs/physics.md quotes the
 # plainer power law 0.0125·R^0.82·cad^1.6, which is within 7%. The extra
 # precision matters for resistance_from_broadcast: model power is steep in
 # R, so a 7% error in the bike's number becomes about 14% in model power.
