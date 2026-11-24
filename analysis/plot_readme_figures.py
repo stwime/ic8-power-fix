@@ -6,7 +6,7 @@ Figures regenerated:
   docs/figures/power_curves.png   — IC8 broadcast (dashed) vs bridge
                                     corrected (solid) at several R values
                                     across the cadence range, at the
-                                    shipped powerScale default.
+                                    shipped Power scale default.
   docs/figures/indoor_surge.png   — R=25 acceleration from a BLE log,
                                     decomposed into steady + KE terms.
   docs/figures/outdoor_surge.png  — end-of-ride acceleration on a 4iiii
@@ -31,6 +31,7 @@ from collections import defaultdict
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.legend_handler import HandlerTuple
 from scipy.integrate import solve_ivp
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -77,7 +78,7 @@ def plot_power_curves():
     ax.set_ylabel("Power (W)")
     ax.set_title(
         "IC8 broadcast (dashed) vs bridge corrected (solid)\n"
-        f"powerScale = {POWER_SCALE:.2f}"
+        f"Power scale {POWER_SCALE:.2f}"
     )
     ax.set_xlim(30, 110)
     ax.set_ylim(0, 700)
@@ -105,11 +106,11 @@ def _read_window(path: Path, t0: float, t1: float):
 
 
 def plot_indoor_surge():
-    # R=25 acceleration at t≈35–50. Cadence climbs 24 → 125 rpm in ~8 s,
+    # R=25 acceleration at t≈35–50. Cadence climbs 23 → 125 rpm in ~11 s,
     # holds at the FTMS 125-rpm cap for ~2 s, then decelerates as the
     # rider stops pushing. R is cleanly 25 throughout. Peak KE pulse
     # during the steep ramp is ~160 W on top of ~145 W steady; steady
-    # peaks near 245 W at the cadence cap.
+    # peaks near 255 W at the cadence cap.
     t, cad, r = _read_window(SPRINT_CSV, 33.0, 50.5)
     omega = cad * np.pi / 30.0
 
@@ -153,7 +154,7 @@ def plot_indoor_surge():
     ax.set_ylabel("Power (W)")
     ax.set_title(
         "R=25 acceleration decomposed into steady and KE terms\n"
-        f"powerScale = {POWER_SCALE:.2f}"
+        f"Power scale {POWER_SCALE:.2f}"
     )
     ax.legend(loc="upper right", frameon=False)
     ax.grid(True, alpha=0.25)
@@ -337,7 +338,8 @@ def plot_spindown_fit():
             om_pred = _integrate(float(R), t, float(om[0]))
             if om_pred is not None:
                 ax.plot(t, om_pred, "-", color=color, lw=2.0, alpha=0.95)
-        ax.set_title(f"R = {R}   (n = {len(segs)} coastdowns)",
+        n = len(segs)
+        ax.set_title(f"R = {R}   ({n} coastdown{'s' if n != 1 else ''})",
                      fontsize=10)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Crank ω (rad/s)")
@@ -346,13 +348,14 @@ def plot_spindown_fit():
     handles = [
         plt.Line2D([], [], marker="o", color="#333", linestyle="",
                    ms=5, alpha=0.6, label="Coastdown data"),
-        plt.Line2D([], [], color="#222", lw=2.0,
-                   label="Brake model"),
+        tuple(plt.Line2D([], [], color=c, lw=2.0) for c in colors),
     ]
-    fig.legend(handles=handles, loc="upper center",
-               ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.985))
+    fig.legend(handles=handles, labels=["Coastdown data", "Brake model"],
+               handler_map={tuple: HandlerTuple(ndivide=None, pad=0)},
+               loc="upper center", ncol=2, frameon=False,
+               bbox_to_anchor=(0.5, 0.985))
     fig.suptitle(
-        "Spin-down model vs data — representative R buckets",
+        "Spin-down model vs data at four dial positions",
         fontsize=12, weight="bold", y=1.005,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.95])

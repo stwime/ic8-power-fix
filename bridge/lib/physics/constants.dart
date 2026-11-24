@@ -1,8 +1,8 @@
 /// Protocol-level constants (BLE limits, filter windows). For tunable physics
 /// constants (brake c, β, τ_c, I_crank, Power scale), see [Calibration].
 class Constants {
-  /// FTMS BLE caps cadence at 125 rpm (uint16 at 0.5 rpm); treat ≥124 as suspect
-  /// and prefer CSC-derived cadence in that case.
+  /// The IC8 caps its FTMS cadence at 125 rpm; treat ≥124 as capped and use
+  /// the CSC crank-count cadence when it is available.
   static const double cadCap = 124.0;
 
   /// IC8 hard mechanical cap; the brake locks the crank, no useful info.
