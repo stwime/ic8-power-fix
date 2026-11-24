@@ -48,15 +48,14 @@ class CoastdownPoint {
   });
 }
 
-/// Result of fitting Wouterse linear-regime
-///     λ_eff(R) = β + (2ακ/I) · H(R)²   with H(R) = [Calibration.hillAt]
+/// Result of fitting
+///     λ_eff(R) = β + (c/I) · H(R)²   with H(R) = [Calibration.hillAt]
 /// across multiple [CoastdownPoint]s. Everything except β is held fixed at
-/// the [Calibration] defaults: the shape (H, κ) is firmware-mapping +
-/// geometry, the inertia I is flywheel geometry, and α is the reference
-/// spin-down fit carried to that I. Per-bike
-/// spin-downs structurally can't separate α from I (only the ratio shows
-/// up in I·ω̇ = -τ), so fitting α from coastdowns just absorbs I_crank
-/// deviations into a wrong α. β is the one quantity that genuinely varies
+/// the [Calibration] defaults: the shape H is firmware-mapping + geometry,
+/// the inertia I is flywheel geometry, and c is the reference spin-down
+/// fit at that I. Per-bike spin-downs structurally can't separate c from I
+/// (only the ratio shows up in I·ω̇ = -τ), so fitting c from coastdowns
+/// just absorbs I_crank deviations into a wrong c. β is the one quantity that genuinely varies
 /// unit-to-unit (drivetrain friction, belt tension, bearing wear) and isn't
 /// degenerate with anything else — so it's the only thing we fit.
 class BrakeFit {
@@ -72,9 +71,7 @@ class BrakeFit {
   });
 }
 
-/// Port of analysis/spindown_fit.py:find_clean_coastdowns.
-///
-/// A run begins when CSC cadence is ≥ [minCadStart]. The run extends as long as
+/// Splits a BLE log into clean coastdown runs. A run begins when CSC cadence is ≥ [minCadStart]. The run extends as long as
 /// CSC cadence is non-increasing (small [flatTol] for tied notifications) and
 /// resistance stays within ±[rJitterMax] of the run's starting R. Runs shorter
 /// than [minSamples] are discarded.
@@ -336,14 +333,14 @@ class CoastdownDetector {
   }
 }
 
-/// Weighted least-squares fit of β in the Wouterse linear-regime relation
-///     λ_eff(R) = β + (2·α·κ / I) · H(R)²
+/// Weighted least-squares fit of β in the relation
+///     λ_eff(R) = β + (c / I) · H(R)²
 /// with everything except β held fixed at the [Calibration] defaults.
 ///
-/// User coastdowns at typical cadences sit well below the brake's
-/// critical ω, so the bell-curve term collapses to linear damping with
-/// effective decay rate λ_eff(R). With I_crank pinned by flywheel geometry
-/// and α by the reference fit at that I — both shared across all
+/// The brake is linear damping, so a coastdown decays at λ_eff(R) (the
+/// Coulomb term biases the log-linear λ̂ slightly high at low ω, and β
+/// absorbs that). With I_crank pinned by flywheel geometry and c by the
+/// reference fit at that I — both shared across all
 /// IC8/IC4/C6/C7 units — only β has a physical reason to vary unit-to-unit
 /// and isn't degenerate with anything else. The fitter subtracts the
 /// model's H(R)² contribution and recovers β as a single weighted mean
@@ -358,8 +355,7 @@ class CoastdownDetector {
 /// one point in principle).
 BrakeFit fitBrake(
   List<CoastdownPoint> points, {
-  double alpha = Calibration.defaultAlpha,
-  double kappa = Calibration.defaultKappa,
+  double brake = Calibration.defaultBrake,
   double iCrank = Calibration.defaultICrank,
 }) {
   if (points.length < 2) {
@@ -370,7 +366,7 @@ BrakeFit fitBrake(
     throw ArgumentError('need ≥2 distinct R values, got ${distinctR.length}');
   }
 
-  final scale = 2.0 * kappa / iCrank;
+  final scale = brake / iCrank;
 
   double designAt(int r) {
     if (r <= 0) return 0.0;
@@ -383,14 +379,14 @@ BrakeFit fitBrake(
     return wRoot * wRoot;
   }
 
-  // β-only WLS at fixed (α, p, R_h, κ, I): subtract the modelled H(R)²
+  // β-only WLS at fixed (c, H, I): subtract the modelled H(R)²
   // contribution and take the weighted mean of the residuals.
   double sw = 0, sres = 0;
   for (final pt in points) {
     final u = designAt(pt.resistance);
     final w = weightOf(pt);
     sw += w;
-    sres += w * (pt.lambda - alpha * u);
+    sres += w * (pt.lambda - u);
   }
   if (sw < 1e-12) {
     throw StateError('zero-weight fit (degenerate point set)');
@@ -400,7 +396,7 @@ BrakeFit fitBrake(
   double sse = 0;
   final residuals = <({int r, double measured, double predicted})>[];
   for (final pt in points) {
-    final pred = alpha * designAt(pt.resistance) + beta;
+    final pred = designAt(pt.resistance) + beta;
     residuals.add((r: pt.resistance, measured: pt.lambda, predicted: pred));
     final e = pt.lambda - pred;
     sse += weightOf(pt) * e * e;

@@ -25,7 +25,7 @@ from scipy.optimize import least_squares
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "analysis"))
-from fit_geom_hill import collect, I_CRANK
+from fit_spindowns import collect, I_CRANK
 
 
 def make_resid_drag(form: str):

@@ -347,7 +347,7 @@ def plot_spindown_fit():
         plt.Line2D([], [], marker="o", color="#333", linestyle="",
                    ms=5, alpha=0.6, label="Coastdown data"),
         plt.Line2D([], [], color="#222", lw=2.0,
-                   label="Wouterse model"),
+                   label="Brake model"),
     ]
     fig.legend(handles=handles, loc="upper center",
                ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.985))

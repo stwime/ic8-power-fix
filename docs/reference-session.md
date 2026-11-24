@@ -196,6 +196,6 @@ scale directly and take precedence.
 | Result | Action |
 | --- | --- |
 | Ratio flat, mean within 5% of 1 | Nothing to change. |
-| Ratio flat, mean elsewhere, or Option B or C gives a different scale | Set the Power scale slider to the ratio, to `s` or to the printed percentage. To change the shipped default instead, multiply the inertia, α and τ_c by that factor together in `analysis/bridge_model.py`, `analysis/fit_wouterse.py` and the `Calibration` defaults in `bridge/lib/physics/calibration.dart`; spin-downs fix only their ratios, so changing one alone breaks the fit. |
+| Ratio flat, mean elsewhere, or Option B or C gives a different scale | Set the Power scale slider to the ratio, to `s` or to the printed percentage. To change the shipped default instead, multiply the inertia, the brake damping c and τ_c by that factor together in `analysis/bridge_model.py`, `analysis/fit_spindowns.py` and the `Calibration` defaults in `bridge/lib/physics/calibration.dart`; spin-downs fix only their ratios, so changing one alone breaks the fit. |
 | Ratio trends with R | Load the table in the app. The spin-down model stays as documentation of the shape it predicted. |
 | Warm cells lower than cold | Note the size. A thermal term is the next model change if it exceeds the scatter. |

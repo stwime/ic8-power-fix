@@ -10,17 +10,17 @@ void main() {
   test('brakePowerAt matches analysis/bridge_model.py', () {
     final cal = Calibration.defaults();
     const cases = [
-      (10, 60.0, 22.489278522979546),
-      (30, 80.0, 145.8944057165424),
-      (50, 100.0, 462.3585830292022),
-      (70, 60.0, 309.035484454725),
-      (90, 100.0, 799.7151485203892),
+      (10, 60.0, 22.428455984009855),
+      (30, 80.0, 142.09430437269813),
+      (50, 100.0, 518.974382070843),
+      (70, 60.0, 322.76300555901906),
+      (90, 100.0, 1257.3539788990513),
     ];
     for (final (r, cad, expected) in cases) {
       final p = cal.brakePowerAt(r.toDouble(), cad * math.pi / 30.0);
       expect(p, closeTo(expected, 1e-6), reason: 'R=$r cad=$cad');
     }
     expect(cal.tauBrakeAt(0, 60 * math.pi / 30.0),
-        closeTo(1.6560286178455672, 1e-9));
+        closeTo(1.6777346799761355, 1e-9));
   });
 }

@@ -31,7 +31,7 @@ class _SettingsPageState extends State<SettingsPage> {
   StreamSubscription? _sampleSub;
   final ValueNotifier<IC8Sample?> _lastSample = ValueNotifier(null);
   late final TextEditingController _nameCtrl;
-  late final TextEditingController _alphaCtrl;
+  late final TextEditingController _brakeCtrl;
   late final TextEditingController _betaCtrl;
 
   @override
@@ -39,7 +39,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     final cal = widget.calibration;
     _nameCtrl = TextEditingController(text: widget.prefs.proxyName);
-    _alphaCtrl = TextEditingController(text: cal.alpha.toStringAsFixed(4));
+    _brakeCtrl = TextEditingController(text: cal.brake.toStringAsFixed(4));
     _betaCtrl = TextEditingController(text: cal.beta.toStringAsFixed(4));
     _sampleSub = widget.central.samples.listen((s) {
       _lastSample.value = s;
@@ -51,7 +51,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _sampleSub?.cancel();
     _lastSample.dispose();
     _nameCtrl.dispose();
-    _alphaCtrl.dispose();
+    _brakeCtrl.dispose();
     _betaCtrl.dispose();
     super.dispose();
   }
@@ -77,7 +77,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await widget.calibration.resetToDefaults();
     if (!mounted) return;
     setState(() {
-      _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(4);
+      _brakeCtrl.text = widget.calibration.brake.toStringAsFixed(4);
       _betaCtrl.text = widget.calibration.beta.toStringAsFixed(4);
     });
     messenger.showSnackBar(const SnackBar(content: Text('Reset to defaults')));
@@ -93,15 +93,15 @@ class _SettingsPageState extends State<SettingsPage> {
     ));
   }
 
-  Future<void> _saveAlpha() async {
+  Future<void> _saveBrake() async {
     final messenger = ScaffoldMessenger.of(context);
-    final v = double.tryParse(_alphaCtrl.text.replaceAll(',', '.'));
+    final v = double.tryParse(_brakeCtrl.text.replaceAll(',', '.'));
     if (v == null) {
       messenger.showSnackBar(const SnackBar(
           content: Text('That is not a valid number')));
       return;
     }
-    await widget.calibration.setAlpha(v);
+    await widget.calibration.setBrake(v);
     if (!mounted) return;
     // Calibration is mutable; rebuild so isAtDefaults (and the reset action's
     // enable state) reflects the new value.
@@ -119,7 +119,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     await widget.calibration.setBeta(v);
     if (!mounted) return;
-    // See _saveAlpha — rebuild for isAtDefaults.
+    // See _saveBrake — rebuild for isAtDefaults.
     setState(() {});
     messenger.showSnackBar(const SnackBar(content: Text('Saved')));
   }
@@ -291,7 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ));
               if (mounted) {
                 setState(() {
-                  _alphaCtrl.text = widget.calibration.alpha.toStringAsFixed(4);
+                  _brakeCtrl.text = widget.calibration.brake.toStringAsFixed(4);
                   _betaCtrl.text = widget.calibration.beta.toStringAsFixed(4);
                 });
               }
@@ -302,11 +302,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
           const SizedBox(height: Insets.xl),
           _AdvancedSection(
-            alphaController: _alphaCtrl,
+            brakeController: _brakeCtrl,
             betaController: _betaCtrl,
-            currentAlpha: cal.alpha,
+            currentBrake: cal.brake,
             currentBeta: cal.beta,
-            onSaveAlpha: _saveAlpha,
+            onSaveBrake: _saveBrake,
             onSaveBeta: _saveBeta,
           ),
 
@@ -553,19 +553,19 @@ class _SectionHint extends StatelessWidget {
 }
 
 class _AdvancedSection extends StatelessWidget {
-  final TextEditingController alphaController;
+  final TextEditingController brakeController;
   final TextEditingController betaController;
-  final double currentAlpha;
+  final double currentBrake;
   final double currentBeta;
-  final Future<void> Function() onSaveAlpha;
+  final Future<void> Function() onSaveBrake;
   final Future<void> Function() onSaveBeta;
 
   const _AdvancedSection({
-    required this.alphaController,
+    required this.brakeController,
     required this.betaController,
-    required this.currentAlpha,
+    required this.currentBrake,
     required this.currentBeta,
-    required this.onSaveAlpha,
+    required this.onSaveBrake,
     required this.onSaveBeta,
   });
 
@@ -597,11 +597,11 @@ class _AdvancedSection extends StatelessWidget {
           const SizedBox(height: Insets.md),
           _EditableNumberRow(
             label: 'Brake',
-            controller: alphaController,
-            defaultValue: Calibration.defaultAlpha,
-            currentValue: currentAlpha,
+            controller: brakeController,
+            defaultValue: Calibration.defaultBrake,
+            currentValue: currentBrake,
             frac: 4,
-            onSave: onSaveAlpha,
+            onSave: onSaveBrake,
           ),
           const SizedBox(height: Insets.md),
           _EditableNumberRow(

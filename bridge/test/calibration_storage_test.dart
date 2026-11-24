@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ic8_bridge/physics/calibration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Settings saved before I_crank moved from 7.55 to 6.66 were relative to
-/// the old model. A tuned value must keep giving the same output; a saved
-/// default must become the new default.
+/// Settings saved under an older model. A tuned value must keep giving the
+/// same output (Power scale) or the same ratio to its default (brake); a
+/// saved default must become the new default.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const k = Calibration.defaultICrank / 7.55;
@@ -44,14 +44,30 @@ void main() {
     expect(cal.powerScale, Calibration.powerScaleMax);
   });
 
-  test('a tuned brake keeps its output; the old default maps to the new',
+  test('a tuned α carries over as the same ratio to its default, once',
       () async {
-    final (tuned, _) = await loadWith({'cal.alpha.v10': 180.0});
-    expect(tuned.alpha, closeTo(180.0 * k, 1e-9));
-    final (dflt, prefs) = await loadWith({'cal.alpha.v10': 165.0});
-    expect(dflt.alpha, Calibration.defaultAlpha);
+    final (v11, prefs) = await loadWith({'cal.alpha.v11': 145.55 * 1.2});
+    expect(v11.brake, closeTo(Calibration.defaultBrake * 1.2, 1e-9));
+    expect(prefs.getDouble('cal.brake.v12'), v11.brake);
     expect(prefs.containsKey('cal.alpha.v11'), isFalse);
-    expect(prefs.containsKey('cal.alpha.v10'), isFalse);
+    final (v10, _) = await loadWith({'cal.alpha.v10': 165.0 * 0.9});
+    expect(v10.brake, closeTo(Calibration.defaultBrake * 0.9, 1e-9));
+  });
+
+  test('an α saved at its old default becomes the new default', () async {
+    for (final (key, dflt) in [('cal.alpha.v11', 145.55), ('cal.alpha.v10', 165.0)]) {
+      final (cal, prefs) = await loadWith({key: dflt});
+      expect(cal.brake, Calibration.defaultBrake);
+      expect(prefs.containsKey('cal.brake.v12'), isFalse);
+      expect(prefs.containsKey(key), isFalse);
+    }
+  });
+
+  test('a β fit against the old brake shape falls back to the default',
+      () async {
+    final (cal, prefs) = await loadWith({'cal.betaW.v10': 0.02});
+    expect(cal.beta, Calibration.defaultBeta);
+    expect(prefs.containsKey('cal.betaW.v10'), isFalse);
   });
 
   test('a value under the current key wins over an old one', () async {
@@ -60,12 +76,4 @@ void main() {
     expect(cal.powerScale, 0.95);
   });
 
-  test('the old defaults and the new ones give the same spin-down', () {
-    // Only torque/inertia is in the spin-down data: α and τ_c moved with
-    // I_crank, so the decay rate at every R is unchanged.
-    expect(Calibration.defaultAlpha / Calibration.defaultICrank,
-        closeTo(165.0 / 7.55, 1e-4));
-    expect(Calibration.defaultTauC / Calibration.defaultICrank,
-        closeTo(1.1468 / 7.55, 1e-5));
-  });
 }

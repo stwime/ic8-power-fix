@@ -7,63 +7,49 @@ import 'power_table.dart';
 /// Tunable physics constants — split from [Constants] so they can be edited at
 /// runtime via the settings screen and persisted across app launches.
 ///
-/// Brake torque uses the strict-Wouterse permanent-magnet eddy-brake model
-/// plus a two-term residual drag (Coulomb + viscous):
+/// The IC8's brake is two pairs of permanent magnets straddling the
+/// aluminium flywheel at a fixed gap; the dial slides them onto the disc.
+/// Below its critical speed an eddy brake is linear damping, and the
+/// spin-downs show no fade at any speed they reach (~150 rpm at R ≤ 44,
+/// 90–100 rpm at R = 66–85), so torque at the crank is
 ///
-///     τ_brake(R, ω) = α · H(R) · 2x / (1 + x²) + τ_c + I · β · ω
-///       with  x = κ · H(R) · ω
-///       and  H(R) = w · R^p1/(R^p1 + R_h1^p1)
+///     τ_brake(R, ω) = c · H(R)² · ω + τ_c + I · β · ω
+///       with  H(R) = w · R^p1/(R^p1 + R_h1^p1)
 ///                  + (1−w) · R^p2/(R^p2 + R_h2^p2)
 ///
-/// fit on per-revolution ω(t) trajectories from a hand-curated set of
-/// 46 video-tracked spindowns spanning R = 0 to 93 (analysis/fit_wouterse.py).
+/// fit on per-revolution ω(t) trajectories from 46 hand-curated,
+/// video-tracked spin-downs spanning R = 0 to 93
+/// (analysis/fit_spindowns.py). A fade at a fixed critical speed makes
+/// the fit steadily worse as that speed comes down from infinity; at
+/// 300 rpm RSS is 4% worse, at 160 rpm 40%.
 ///
-/// Three regimes in ω at fixed R (eddy term only — residual drag adds on
-/// independently):
-///   ω << ω_c :  τ_eddy ≈ (2τ_max/ω_c)·ω      (linear damping)
-///   ω = ω_c  :  τ_eddy = τ_max  with  τ_max = α·H(R), ω_c = 1/(κ·H(R))
-///   ω >> ω_c :  τ_eddy ≈ 2τ_max·(ω_c/ω)      (induced field opposes source)
-///
-/// The strict coupling τ_max·ω_c = α/κ is a single constant set by disc
-/// geometry (conductivity × thickness × pole-area × radius²) — so τ_max(R)
-/// and 1/ω_c(R) share the single H(R) shape.
-///
-/// H(R) is a sum of two Hill curves: the empirical B²(R) has a mid-
-/// band shoulder a single sigmoid can't bend to. The two-Hill
-/// decomposition is empirical — the IC8 has two magnet pairs but both
-/// engage across the same R range, so the second Hill doesn't map
-/// cleanly to one of them.
+/// H(R) is a sum of two Hill curves, an empirical shape. From R = 40 up
+/// it matches, within ~15%, the shape the magnet geometry gives with the
+/// eddy currents solved (analysis/physics_first_brake.py).
 ///
 /// Residual drag has two components, both R-independent:
 ///   τ_c       = Coulomb (bearings + belt + seal friction) — constant in ω
 ///   I · β · ω = viscous (windage + air-film) — linear in ω
 /// Isolating the R=0 spin-downs (no eddy contribution) and fitting drag-
 /// shape alone, Coulomb + viscous beats viscous-only by ~15× in RSS
-/// (analysis/residual_drag_shape.py). Physically that's right: bearing and
-/// belt friction are roughly constant in ω, not viscous.
+/// (analysis/residual_drag_shape.py).
 ///
-///   α     = peak torque amplitude (N·m) — set by I_crank through the
-///           spin-down fit, shared across IC8/IC4/C6/C7 (same magnets,
-///           same actuator, same firmware)
+///   c     = brake damping at H = 1 (N·m·s/rad at the crank) — set by
+///           I_crank through the spin-down fit, shared across
+///           IC8/IC4/C6/C7 (same magnets, same actuator, same firmware).
+///           Settings calls it "Brake".
 ///   β     = viscous residual drag (1/s) — per-bike (windage + air-film)
 ///   τ_c   = Coulomb residual drag (N·m) — per-bike default (bearings + belt)
-///   κ     = 1/ω_c at saturation (s/rad) — geometry, fixed across bikes,
-///           a prior because the spin-downs never reach ω_c
-///   w     = mixing weight on H1 (broad) — H-shape, bike-firmware × geom
-///   R_h1, p1 = broad Hill midpoint and sharpness — H-shape
-///   R_h2, p2 = sharp Hill midpoint and sharpness — H-shape
+///   w, R_h1, p1, R_h2, p2 = H-shape
 ///
-/// The H-shape constants ({w, R_h1, p1, R_h2, p2}) absorb both the eddy-
-/// brake gap-vs-dial physics and whatever non-linear mapping the IC8's
-/// firmware applies between dial position and physical brake state —
-/// they're inseparable from this dataset alone, so they live with the
-/// geometry constants and aren't exposed in auto-calibration. Only β is
-/// fit per bike — α and I_crank are structurally degenerate in spin-down
-/// data (only their ratio appears in I·ω̇ = -τ), so per-bike α fitting
-/// just absorbs I_crank deviations into a wrong α. Absolute scale comes
-/// from I_crank, and the [powerScale] slider corrects it against an
-/// external power meter or the rider's FTP measured on one.
-/// See [Coastdown.fitBrake].
+/// The H-shape constants absorb both the magnet-overlap physics and
+/// whatever mapping the IC8 applies between dial reading and carrier
+/// position, so they aren't exposed in auto-calibration. Only β is fit
+/// per bike: c and I_crank are degenerate in spin-down data (only their
+/// ratio appears in I·ω̇ = −τ), so fitting c per bike just absorbs I_crank
+/// deviations into a wrong c. Absolute scale comes from I_crank, and the
+/// [powerScale] slider corrects it against an external power meter or the
+/// rider's FTP measured on one. See [Coastdown.fitBrake].
 ///
 /// Anchoring chain:
 ///
@@ -73,64 +59,38 @@ import 'power_table.dart';
 ///      to them, so they are not lead), 13.1 kg in all, times g² for the
 ///      belt ratio g = 4.5. Ring heights and g are ruler-measured, and
 ///      cast iron instead of steel would give 6.21, so this holds to
-///      roughly 10%. The rider's FTP cross-checks it: their 20-minute
-///      indoor effort matches their 200 W outdoor FTP at I ≈ 6.8
+///      roughly 10%. The rider's FTP cross-checks it
 ///      (analysis/ftp_anchor.py).
 ///
-///   2. Spin-downs fix torque over inertia, so α and τ_c follow from I.
-///      The fit ran at I = 7.55 with α = 165 and τ_c = 1.1468; all three
-///      are scaled by 6.66/7.55, which leaves every fitted ω(t) and the
-///      RSS unchanged.
+///   2. Spin-downs fix torque over inertia, so c and τ_c follow from I.
 ///
-///   3. [defaultKappa] is a prior. Under strict Wouterse α/κ ≈ 918 W is
-///      the eddy power at ω_c; at fixed R the power is
-///      (α/κ)·2x²/(1+x²), x = ω/ω_c, so the asymptote is 2α/κ ≈ 1840 W.
-///      κ was pinned with α/κ near the 1000 W spec; the coastdowns sit
-///      at x ≤ 0.6 and never show the roll-off, so the data cannot
-///      check it.
+///   3. H(R) shape, β, τ_c and c from a global fit on the 46 spin-downs at
+///      the pinned I. RSS = 0.01185 across 51,792 samples.
 ///
-///   4. H(R) shape ({w, R_h1, p1, R_h2, p2}), β, and τ_c from a global
-///      fit on 46 video-tracked spindowns spanning R = 0 to 93, with α,
-///      κ and I_crank pinned. RSS = 0.0188 across 51,792 samples.
-///
-/// [powerScale] is a coupled absolute-scale knob: it multiplies α and
-/// I_crank by the same factor, so the eddy steady term, the residual
-/// drag term, and the KE term all scale by the same factor and the
-/// total output is linear in [powerScale]. Cadence-shape and R-shape
-/// are untouched. The decay-rate λ(R) = β + (2ακ/I)·H(R)² is
-/// powerScale-invariant because α and I cancel — the bike's physical
-/// coastdown rate doesn't depend on what the bridge displays.
+/// [powerScale] is a coupled absolute-scale knob: it multiplies c, τ_c
+/// and I_crank by the same factor, so the brake term, the residual drag
+/// and the KE term all scale together and the total output is linear in
+/// [powerScale]. Cadence-shape and R-shape are untouched, and so is the
+/// modelled coastdown rate (c/I + β), a property of the bike.
 ///
 /// The default 1.00 is the geometry above. Tune against an external
 /// power meter or your FTP; nothing in the model claims absolute scale
 /// to better than ~10% without one.
 class Calibration {
-  // Wouterse params from analysis/fit_wouterse.py on 46 hand-curated
-  // video-tracked spindowns (strict τ_max ∝ B², ω_c ∝ 1/B² coupling).
-  //
-  // I_crank = 6.66 is the flywheel geometry with steel rings; α and τ_c
-  // are the fit carried to that I (only torque/I is in the data). κ is
-  // a prior: α/κ ≈ 918 W is the eddy power at ω_c and the coastdowns
-  // never reach it. H, β, τ_c are fit globally at the pinned α, κ, I —
-  // RSS = 0.0188 across 51,792 samples. analysis/bridge_model.py
-  // mirrors these values.
-  //
-  // Residual drag splits into Coulomb (τ_c, bearings + belt) and
-  // viscous (β, windage); R=0 spin-downs prefer this split by ~15×
-  // in RSS over viscous-only. H(R) is a sum of two Hill curves.
-  static const double defaultAlpha = 145.55;    // N·m — peak torque amplitude
-  static const double defaultBeta = 0.0154;     // 1/s — viscous residual drag
-  static const double defaultTauC = 1.0116;     // N·m — Coulomb residual drag
-  static const double defaultW = 0.5994;        // mix weight on H1 (broad)
-  static const double defaultRh1 = 185.036;     // broad Hill midpoint
-  static const double defaultP1 = 0.669;        // broad Hill sharpness
-  static const double defaultRh2 = 59.372;      // sharp Hill midpoint
-  static const double defaultP2 = 2.246;        // sharp Hill sharpness
-  static const double defaultKappa = 0.1585;    // s/rad — 1/ω_c at saturation (α/κ prior, unobserved)
+  // From analysis/fit_spindowns.py at I_crank = 6.66 (flywheel geometry,
+  // steel rings). analysis/bridge_model.py mirrors these values.
+  static const double defaultBrake = 43.7682;   // N·m·s/rad — brake damping c at H = 1
+  static const double defaultBeta = 0.013854;   // 1/s — viscous residual drag
+  static const double defaultTauC = 1.0980;     // N·m — Coulomb residual drag
+  static const double defaultW = 0.44985;       // mix weight on H1 (broad)
+  static const double defaultRh1 = 129.292;     // broad Hill midpoint
+  static const double defaultP1 = 0.64984;      // broad Hill sharpness
+  static const double defaultRh2 = 78.890;      // sharp Hill midpoint
+  static const double defaultP2 = 1.87239;      // sharp Hill sharpness
   static const double defaultICrank = 6.66;     // kg·m² — flywheel geometry, steel rings, g = 4.5
-  static const double defaultPowerScale = 1.00; // coupled α + I_crank scale
+  static const double defaultPowerScale = 1.00; // coupled c + τ_c + I_crank scale
 
-  /// Bounds for the Power scale slider — coupled multiplier on α and
+  /// Bounds for the Power scale slider — coupled multiplier on c, τ_c and
   /// I_crank applied at every output evaluation. 0.5–2.0 covers the range
   /// of unit-to-unit firmware-calibration spread we'd plausibly see across
   /// IC8s on top of the 1.00 default.
@@ -138,20 +98,28 @@ class Calibration {
   static const double powerScaleMax = 2.0;
 
   // Storage keys are versioned so that bumping a default invalidates
-  // any value persisted under a prior version. α and Power scale moved
-  // to new keys when I_crank went from 7.55 to 6.66; [load] converts a
-  // value tuned under the old keys so the output it gave is unchanged.
-  static const String _keyAlpha = 'cal.alpha.v11';
-  static const String _keyBeta = 'cal.betaW.v10';
+  // any value persisted under a prior version. The brake moved to a new
+  // key when the model went from a fading (Wouterse) brake with amplitude
+  // α to linear damping c; [load] carries a tuned α over as the same
+  // ratio to its default. β moved with the new H-shape: a β fit against
+  // the old shape doesn't belong to this one, so it falls back to the
+  // default. Power scale moved when I_crank went from 7.55 to 6.66;
+  // [load] converts a value tuned under the old key so the output it gave
+  // is unchanged.
+  static const String _keyBrake = 'cal.brake.v12';
+  static const String _keyBeta = 'cal.betaW.v12';
   static const String _keyPowerScale = 'cal.powerScale.v10';
   static const String _keyPowerTable = 'cal.powerTable.v1';
 
-  static const String _keyAlphaV10 = 'cal.alpha.v10';
+  /// Old α keys and the default each was relative to.
+  static const Map<String, double> _alphaKeys = {
+    'cal.alpha.v11': 145.55,
+    'cal.alpha.v10': 165.0,
+  };
   static const String _keyPowerScaleV9 = 'cal.powerScale.v9';
-  static const double _alphaV10 = 165.0;
   static const double _iCrankV10 = 7.55;
 
-  double alpha;
+  double brake;
   double beta;
   double powerScale;
 
@@ -162,7 +130,7 @@ class Calibration {
   PowerTable? powerTable;
 
   Calibration._({
-    required this.alpha,
+    required this.brake,
     required this.beta,
     required this.powerScale,
     this.powerTable,
@@ -170,7 +138,7 @@ class Calibration {
 
   /// In-memory only, no persistence. For tests.
   Calibration.defaults()
-      : alpha = defaultAlpha,
+      : brake = defaultBrake,
         beta = defaultBeta,
         powerScale = defaultPowerScale,
         powerTable = null;
@@ -188,12 +156,11 @@ class Calibration {
         await prefs.remove(_keyPowerTable);
       }
     }
-    // Values saved under the old keys were relative to I_crank = 7.55.
-    // A tuned α scales with I; a tuned Power scale scales inversely,
-    // rounded to the slider's 1% step. A saved default stays a default.
+    final brake = await _readBrake(prefs);
+    // A Power scale saved under the old key was relative to I_crank =
+    // 7.55; it scales inversely with I, rounded to the slider's 1% step.
+    // A saved default stays a default.
     const k = defaultICrank / _iCrankV10;
-    final alpha = await _readOrConvert(prefs, _keyAlpha, _keyAlphaV10,
-        (a) => a == _alphaV10 ? null : a * k);
     final powerScale = await _readOrConvert(
         prefs, _keyPowerScale, _keyPowerScaleV9,
         (p) => p == defaultPowerScale
@@ -201,12 +168,30 @@ class Calibration {
             : ((p / k * 100).round() / 100)
                 .clamp(powerScaleMin, powerScaleMax)
                 .toDouble());
+    await prefs.remove('cal.betaW.v10');
     return Calibration._(
-      alpha: alpha ?? defaultAlpha,
+      brake: brake ?? defaultBrake,
       beta: prefs.getDouble(_keyBeta) ?? defaultBeta,
       powerScale: powerScale ?? defaultPowerScale,
       powerTable: table,
     );
+  }
+
+  /// The saved brake; failing that, a tuned α under an old key as the same
+  /// ratio to its default, saved under the new key once. A saved default
+  /// stays a default. Old α keys are dropped either way.
+  static Future<double?> _readBrake(SharedPreferences prefs) async {
+    double? brake = prefs.getDouble(_keyBrake);
+    for (final MapEntry(key: key, value: alphaDefault) in _alphaKeys.entries) {
+      final old = prefs.getDouble(key);
+      if (old == null) continue;
+      if (brake == null && old != alphaDefault) {
+        brake = defaultBrake * old / alphaDefault;
+        await prefs.setDouble(_keyBrake, brake);
+      }
+      await prefs.remove(key);
+    }
+    return brake;
   }
 
   /// The value saved under [key]; failing that, [convert] applied to the
@@ -250,8 +235,7 @@ class Calibration {
   }
 
   /// H(R) = w·R^p1/(R^p1 + R_h1^p1) + (1−w)·R^p2/(R^p2 + R_h2^p2).
-  /// Sum-of-two-Hills shape driving both τ_max(R) = α·H(R) and
-  /// 1/ω_c(R) = κ·H(R) under strict Wouterse coupling. Continuous,
+  /// The brake's damping at dial position R is c·H(R)². Continuous,
   /// monotone, zero at R=0, asymptotes to a constant ≤ 1 at R→∞.
   static double _hillTerm(double r, double rH, double p) {
     final rp = math.pow(r, p).toDouble();
@@ -277,15 +261,12 @@ class Calibration {
   double get effectiveICrank => defaultICrank * powerScale;
 
   /// Brake torque + Coulomb + viscous residual drag at the crank, in N·m.
-  /// Sum of the eddy-current Wouterse term, a constant Coulomb term, and
-  /// a linear viscous term. The user-facing [powerScale] multiplies α
-  /// (eddy term), I_crank (viscous residual term), and τ_c (Coulomb
-  /// residual term) by the same factor, so τ_brake scales linearly with
+  /// The user-facing [powerScale] multiplies c (brake), τ_c (Coulomb) and
+  /// I_crank (viscous) by the same factor, so τ_brake scales linearly with
   /// [powerScale] without distorting cadence or R shape.
   double tauBrakeAt(double r, double omega) {
     final h = _hill(r);
-    final x = defaultKappa * h * omega;
-    final tauEddy = (alpha * powerScale) * h * 2.0 * x / (1.0 + x * x);
+    final tauEddy = (brake * powerScale) * h * h * omega;
     final tauResidual = powerScale * (defaultTauC + defaultICrank * beta * omega);
     return tauEddy + tauResidual;
   }
@@ -295,33 +276,16 @@ class Calibration {
     return tauBrakeAt(r, omega) * omega;
   }
 
-  /// Effective decay rate λ(R) in the low-ω linear regime. Equal to
-  /// −d(ln ω)/dt for an unloaded coastdown at small ω, ignoring the
-  /// constant Coulomb contribution (which shows up as a small additive
-  /// term, not as a multiplicative rate). Used by [Coastdown.fitBrake]
-  /// which fits log-linear λ̂ on user coastdowns — that estimator is
-  /// slightly biased high by Coulomb at low ω, and the per-bike β fit
-  /// silently absorbs the bias. The bias is ~5–10% of λ at typical
-  /// riding cadences (70–110 rpm).
-  ///   λ_lin(R) = β + 2·α·κ·H(R)² / I
-  /// [powerScale] cancels because effective α and effective I scale
-  /// together, so the modelled coastdown rate is invariant to the
-  /// output-gain knob (as it should be — it's a property of the bike).
-  double lambdaLinearAt(double r) {
-    final h = _hill(r);
-    return beta + 2.0 * alpha * defaultKappa * h * h / defaultICrank;
-  }
-
   Future<void> setPowerScale(double v) async {
     powerScale = v.clamp(powerScaleMin, powerScaleMax);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyPowerScale, powerScale);
   }
 
-  Future<void> setAlpha(double v) async {
-    alpha = v;
+  Future<void> setBrake(double v) async {
+    brake = v;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_keyAlpha, alpha);
+    await prefs.setDouble(_keyBrake, brake);
   }
 
   Future<void> setBeta(double v) async {
@@ -331,12 +295,12 @@ class Calibration {
   }
 
   Future<void> resetToDefaults() async {
-    alpha = defaultAlpha;
+    brake = defaultBrake;
     beta = defaultBeta;
     powerScale = defaultPowerScale;
     powerTable = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyAlpha);
+    await prefs.remove(_keyBrake);
     await prefs.remove(_keyBeta);
     await prefs.remove(_keyPowerScale);
     await prefs.remove(_keyPowerTable);
@@ -373,10 +337,15 @@ class Calibration {
     await prefs.remove('cal.betaW.v8');
     await prefs.remove('cal.iCrank.v8');
     await prefs.remove('cal.powerScale.v8');
+    await prefs.remove('cal.powerScale.v9');
+    await prefs.remove('cal.betaW.v10');
+    for (final key in _alphaKeys.keys) {
+      await prefs.remove(key);
+    }
   }
 
   bool get isAtDefaults =>
-      alpha == defaultAlpha &&
+      brake == defaultBrake &&
       beta == defaultBeta &&
       powerScale == defaultPowerScale &&
       powerTable == null;

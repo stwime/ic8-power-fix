@@ -17,19 +17,19 @@ import math
 
 import numpy as np
 
-# Spin-downs fix torque over inertia, so α, τ_c and I_CRANK only matter
-# together: scaling all three by one factor leaves every fitted ω(t)
-# unchanged. I_CRANK is the flywheel geometry with steel rings (see
-# README, "Inertia"), and α and τ_c are the spin-down fit carried to it.
-ALPHA = 145.55       # N·m, eddy peak torque amplitude
-BETA = 0.0154        # 1/s, viscous residual drag
-TAU_C = 1.0116       # N·m, Coulomb residual drag
-W = 0.5994           # mix weight on H1
-R_H1 = 185.036
-P1 = 0.669
-R_H2 = 59.372
-P2 = 2.246
-KAPPA = 0.1585       # s/rad
+# Spin-downs fix torque over inertia, so C_EDDY, TAU_C and I_CRANK only
+# matter together: scaling all three by one factor leaves every fitted ω(t)
+# unchanged. I_CRANK is the flywheel geometry with steel rings (see README,
+# "Inertia"), and C_EDDY and TAU_C are the spin-down fit
+# (analysis/fit_spindowns.py) at that I.
+C_EDDY = 43.7682     # N·m·s/rad, brake damping at the crank at H = 1
+BETA = 0.013854      # 1/s, viscous residual drag
+TAU_C = 1.0980       # N·m, Coulomb residual drag
+W = 0.44985          # mix weight on H1
+R_H1 = 129.292
+P1 = 0.64984
+R_H2 = 78.890
+P2 = 1.87239
 I_CRANK = 6.66       # kg·m² at the crank
 
 
@@ -50,8 +50,7 @@ def tau_brake(r, omega, power_scale: float = 1.0, i_crank: float = I_CRANK):
     """Brake + residual torque at the crank, N·m, as the app computes it.
     Works on floats and numpy arrays."""
     h = hill(r)
-    x = KAPPA * h * omega
-    tau_eddy = ALPHA * power_scale * h * 2.0 * x / (1.0 + x * x)
+    tau_eddy = C_EDDY * power_scale * h * h * omega
     tau_residual = power_scale * (TAU_C + i_crank * BETA * omega)
     return tau_eddy + tau_residual
 

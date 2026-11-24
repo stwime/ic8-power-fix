@@ -140,25 +140,23 @@ void main() {
   });
 
   group('fitBrake', () {
-    test('recovers β from synthetic Wouterse-linear decays', () {
-      // 5 distinct R values; λ generated from the Wouterse linear-regime
-      // form
-      //   λ_eff(R) = β + (2ακ/I) · H(R)²
-      // with α, κ, I, and H(R) held at the calibration defaults. β is the
+    test('recovers β from synthetic linear-brake decays', () {
+      // 5 distinct R values; λ generated from
+      //   λ_eff(R) = β + (c/I) · H(R)²
+      // with c, I, and H(R) held at the calibration defaults. β is the
       // only free parameter; recovery should be near machine precision.
-      const alpha = Calibration.defaultAlpha;
+      const brake = Calibration.defaultBrake;
       const beta = 0.045;
-      const kappa = Calibration.defaultKappa;
       const iCrank = Calibration.defaultICrank;
-      double wouterseLinLambda(int r) {
+      double linLambda(int r) {
         if (r == 0) return beta;
         final h = Calibration.hillAt(r.toDouble());
-        return beta + 2.0 * alpha * kappa * h * h / iCrank;
+        return beta + brake * h * h / iCrank;
       }
       final allRows = <CoastdownSample>[];
       for (final r in [8, 18, 30, 55, 80]) {
         final seg = _synth(
-            r: r, lambda: wouterseLinLambda(r), cad0: 110, nSamples: 8,
+            r: r, lambda: linLambda(r), cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
       }
@@ -172,19 +170,18 @@ void main() {
     test('handles R=0 (residual-drag baseline) without exploding', () {
       // R=0 contributes the β baseline: λ = β. H(0) = 0 there, so the
       // design row is (0, 1).
-      const alpha = Calibration.defaultAlpha;
+      const brake = Calibration.defaultBrake;
       const beta = 0.045;
-      const kappa = Calibration.defaultKappa;
       const iCrank = Calibration.defaultICrank;
-      double wouterseLinLambda(int r) {
+      double linLambda(int r) {
         if (r == 0) return beta;
         final h = Calibration.hillAt(r.toDouble());
-        return beta + 2.0 * alpha * kappa * h * h / iCrank;
+        return beta + brake * h * h / iCrank;
       }
       final allRows = <CoastdownSample>[];
       for (final r in [0, 10, 30, 60]) {
         final seg = _synth(
-            r: r, lambda: wouterseLinLambda(r), cad0: 110, nSamples: 8,
+            r: r, lambda: linLambda(r), cad0: 110, nSamples: 8,
             t0: allRows.isEmpty ? 0 : allRows.last.timestampS + 5);
         allRows.addAll(seg);
       }
