@@ -200,9 +200,9 @@ void main() {
       final pBefore = c.lastCorrectedW;
       expect(pBefore, closeTo(cal.brakePowerAt(r.toDouble(), omega), 0.5));
       // Mutate powerScale in place — same Calibration object, no
-      // Corrector restart. powerScale acts as a multiplier on α inside
-      // tauBrakeAt, so a 1.5× scale should ≈1.5× the eddy-brake portion
-      // of steady-state power.
+      // Corrector restart. powerScale multiplies c, τ_c and I_crank inside
+      // tauBrakeAt, so a 1.5× scale should give 1.5× the steady-state
+      // power.
       cal.powerScale = 1.5;
       final p = c.push(timestampS: 10, resistance: r, cadenceRpm: cad,
                        csCadenceAvailable: true, cadenceRpmFtms: cad);
